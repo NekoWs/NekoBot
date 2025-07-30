@@ -1,0 +1,21 @@
+{
+  "name": "neko_bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "run": "tsc && node src/nekobot/index.js",
+    "nekobot": "tsc && node src/nekobot/nekobot.js",
+    "test": "tsc && node src/nekobot/test.js"
+  },
+  "dependencies": {
+    "typescript": "^5.8.3",
+    "ws": "^8.18.1",
+    "openai": "^5.10.1",
+    "cheerio": "^1.1.2",
+    "@types/ws": "^8.18.1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "description": "猫猫机器人"
+}
