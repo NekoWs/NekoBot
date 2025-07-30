@@ -14,6 +14,7 @@ import {GroupBanEvent} from "./events/notice/GroupBanEvent";
 import {OpenEvent} from "./events/OpenEvent";
 import {HeartBeatEvent} from "./events/HeartBeatEvent";
 import {LifeCycleEvent} from "./events/LifeCycleEvent";
+import {MessageChain} from "./message/MessageChain";
 
 class Pair<T> {
     constructor(public first: T, public second: T) { }
@@ -212,6 +213,19 @@ export class Client {
         return new Promise((resolve, reject) => {
             this.handlers.push(new Pair<any>(resolve, reject))
         })
+    }
+
+    /**
+     * 发送群消息
+     *
+     * @param group_id 群号
+     * @param messages 消息
+     */
+    sendGroupMessage(group_id: number, messages: any) {
+        let group = new Group({
+            group_id: group_id
+        }, this)
+        return group.sendMessage(messages)
     }
 
     /**

@@ -176,6 +176,18 @@ class Client {
         });
     }
     /**
+     * 发送群消息
+     *
+     * @param group_id 群号
+     * @param messages 消息
+     */
+    sendGroupMessage(group_id, messages) {
+        let group = new Group_1.Group({
+            group_id: group_id
+        }, this);
+        return group.sendMessage(messages);
+    }
+    /**
      * 注册事件监听器
      *
      * @param type 监听事件类型

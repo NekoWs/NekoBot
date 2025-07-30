@@ -70,6 +70,7 @@ export class Group {
             }).catch(reject)
         })
     }
+
     constructor(payload: any, client: Client) {
         this.group_id = payload.group_id
         this.group_name = payload.group_name

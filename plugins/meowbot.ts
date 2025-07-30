@@ -46,15 +46,19 @@ export function clearMessage(id: number) {
     messages[id] = emptyMessage()
 }
 
-
 async function sendMessage(messages: ChatCompletionMessageParam[]) {
-    let response = await openAi.chat.completions.create({
+    return openAi.chat.completions.create({
         model: "deepseek-chat",
         messages: messages,
         temperature: 1.5
+    }).then(response => {
+        return response.choices[0].message
+    }).catch(e => {
+        return null
     })
-    return response.choices[0].message
 }
+
+const queue: any[] = []
 
 module.exports = {
     name: "MeowBot",
@@ -62,29 +66,61 @@ module.exports = {
     plugin: class MeowPlugin extends AbstractPlugin {
         onEnable(): void {
             const sentences = /([^。?!？！]+[。?!？！]?)/ig
+            let lastMessage = -1
+            let typing = false
+
+            setInterval(() => {
+                if (queue.length < 1 || typing) return
+                let current = queue[0]
+                let messages = current.messages
+                if (messages.length < 1) {
+                    queue.shift()
+                    return
+                }
+                let msg = messages.shift()
+                let mb = new MessageBuilder()
+                if (lastMessage != current.message_id) {
+                    mb.reply(current.message_id)
+                }
+                mb.append(msg)
+                lastMessage = current.message_id
+                typing = true
+                setTimeout(() => {
+                    this.client.sendGroupMessage(current.group_id, mb.build()).catch(e => {
+                        this.logger.error("发送消息失败：", e)
+                    })
+                    typing = false
+                }, msg.length * 300)
+            }, 100)
 
             this.client.on("group_message", (event) => {
                 let message = event.message
                 message.isCue(this.client.bot_id, this.client).then(cue => {
                     if (!cue) return
-
-                    event.stopPropagation()
-
                     let sender = event.sender
                     event.getGroup().then(group => {
                         if (!group) return
-
                         let msg = `${sender.nickname}(${sender.user_id}): ${event.message.toString(true)}`
-
-                        this.logger.info(`[${group.group_name}] ${sender.nickname}: ${msg}`)
-
+                        // 最大处理字数 300
+                        if (msg.length > 300) {
+                            group.sendMessage(
+                                new MessageBuilder()
+                                    .at(sender.user_id)
+                                    .append(" 好多字... 咱看不过来了...")
+                                    .build()
+                            ).catch(e => {})
+                            return
+                        }
+                        this.logger.info(`[${group.group_name}] ${msg}`)
+                        // 停止传播事件
+                        event.stopPropagation()
                         sendMessage(addMessage(sender.user_id, {
                             role: "user",
-                            content: msg
+                            content: msg.replace(`[@${event.self_id}]`, "")
                         })).then(message => {
+                            if (!message) return
                             let content = message.content
                             if (!content) return
-                            this.logger.info("Response:", content)
                             addMessage(sender.user_id, message)
                             if (content.match("BREAK")) {
                                 clearMessage(sender.user_id)
@@ -110,15 +146,22 @@ module.exports = {
                                 buf = msg
                             })
                             marge.push(buf)
-                            let delay = 0
-                            for (const msg of marge) {
-                                setTimeout(() => {
-                                    void group.sendMessage(msg).catch(e => {
-                                        this.logger.warn("发送消息失败：", e)
-                                    })
-                                }, delay)
-                                delay += Math.floor(Math.random() * 2000) + 1000
-                            }
+                            // 将消息添加进队列
+                            queue.push({
+                                messages: marge,
+                                group_id: event.group_id,
+                                user_id: sender.user_id,
+                                message: event.message_id
+                            })
+                            // let delay = 0
+                            // for (const msg of marge) {
+                            //     setTimeout(() => {
+                            //         void group.sendMessage(msg).catch(e => {
+                            //             this.logger.warn("发送消息失败：", e)
+                            //         })
+                            //     }, delay)
+                            //     delay += Math.floor(Math.random() * 2000) + 1000
+                            // }
                         }).catch(e => {
                             this.logger.warn("发送消息失败：", e)
                         })
