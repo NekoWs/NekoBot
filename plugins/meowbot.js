@@ -139,7 +139,7 @@ module.exports = {
                     event.getGroup().then(group => {
                         if (!group)
                             return;
-                        let msg = `${sender.nickname}(${sender.user_id}): ${event.message.toString(true)}`;
+                        let msg = event.message.toString(true);
                         // 最大处理字数 300
                         if (msg.length > 300) {
                             group.sendMessage(new MessageBuilder_1.MessageBuilder()
@@ -148,7 +148,7 @@ module.exports = {
                                 .build()).catch(e => { });
                             return;
                         }
-                        this.logger.info(`[${group.group_name}] ${msg}`);
+                        this.logger.info(`[${group.group_name}] ${sender.nickname}: ${msg}`);
                         // 停止传播事件
                         event.stopPropagation();
                         sendMessage(addMessage(sender.user_id, {

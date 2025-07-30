@@ -33,8 +33,10 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+const OneBot_1 = require("../../onebot/OneBot");
 const child_process = __importStar(require("node:child_process"));
-function main() {
+const MessageBuilder_1 = require("../../onebot/message/MessageBuilder");
+function zipTest() {
     let cwd = process.cwd();
     cwd = cwd.substring(cwd.lastIndexOf("/") + 1);
     let zip = `${cwd}/exec/7z.exe`;
@@ -47,6 +49,20 @@ function main() {
                 console.log(stdout, err);
             });
         }
+    });
+}
+function main() {
+    let client = new OneBot_1.Client("117.72.204.71", 3001, "NekoBot");
+    client.on("open", () => {
+        console.log("Open!");
+    });
+    client.on("group_message", event => {
+        let sender = event.sender;
+        if (sender.user_id !== 1689295608)
+            return;
+        event.getGroup().then(group => {
+            group === null || group === void 0 ? void 0 : group.sendMessage(new MessageBuilder_1.MessageBuilder().reply(event.message_id).append(" 回复测试").build());
+        });
     });
 }
 main();

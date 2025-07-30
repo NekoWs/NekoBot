@@ -111,12 +111,15 @@ module.exports = {
                             ).catch(e => {})
                             return
                         }
-                        this.logger.info(`[${group.group_name}] ${msg}`)
+                        let time = new Date()
+                        let formatted = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()} ${time.getHours()}:${time.getMinutes()}`
+                        let content = `[${formatted}] ${msg.replace(`[@${event.self_id}]`, "")}`
+                        this.logger.info(`[${group.group_name}] ${sender.nickname}: ${msg}`)
                         // 停止传播事件
                         event.stopPropagation()
                         sendMessage(addMessage(sender.user_id, {
                             role: "user",
-                            content: msg.replace(`[@${event.self_id}]`, "")
+                            content: content
                         })).then(message => {
                             if (!message) return
                             let content = message.content
@@ -151,7 +154,7 @@ module.exports = {
                                 messages: marge,
                                 group_id: event.group_id,
                                 user_id: sender.user_id,
-                                message: event.message_id
+                                message_id: event.message_id
                             })
                             // let delay = 0
                             // for (const msg of marge) {

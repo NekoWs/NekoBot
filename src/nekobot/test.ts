@@ -1,7 +1,8 @@
 import {Client} from "../../onebot/OneBot";
 import * as child_process from "node:child_process";
+import {MessageBuilder} from "../../onebot/message/MessageBuilder";
 
-function main() {
+function zipTest() {
     let cwd = process.cwd()
     cwd = cwd.substring(cwd.lastIndexOf("/") + 1)
     let zip = `${cwd}/exec/7z.exe`
@@ -15,6 +16,19 @@ function main() {
                 console.log(stdout, err)
             })
         }
+    })
+}
+function main() {
+    let client = new Client("117.72.204.71", 3001, "NekoBot")
+    client.on("open", () => {
+        console.log("Open!")
+    })
+    client.on("group_message", event => {
+        let sender = event.sender
+        if (sender.user_id !== 1689295608) return
+        event.getGroup().then(group => {
+            group?.sendMessage(new MessageBuilder().reply(event.message_id).append(" 回复测试").build())
+        })
     })
 }
 main()
