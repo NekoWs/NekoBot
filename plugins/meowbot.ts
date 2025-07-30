@@ -100,7 +100,7 @@ module.exports = {
                     let sender = event.sender
                     event.getGroup().then(group => {
                         if (!group) return
-                        let msg = `${sender.nickname}(${sender.user_id}): ${event.message.toString(true)}`
+                        let msg = event.message.toString(true)
                         // 最大处理字数 300
                         if (msg.length > 300) {
                             group.sendMessage(
