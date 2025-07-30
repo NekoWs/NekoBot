@@ -6,7 +6,7 @@ import {MessageBuilder} from "../onebot/message/MessageBuilder";
 
 const openAi = new OpenAI({
     baseURL: "https://api.deepseek.com",
-    apiKey: "sk-b146e6bf44c4432890706a47a0f06201"
+    apiKey: fs.readFileSync("api-key.txt", "utf-8")
 })
 let messages: any = {}
 
@@ -92,7 +92,9 @@ module.exports = {
                                 mb.at(sender.user_id)
                                     .append(" ")
                                     .append("不想聊这个话题了喵！")
-                                void group.sendMessage(mb.build())
+                                group.sendMessage(mb.build()).catch(e => {
+                                    this.logger.warn("发送消息失败：", e)
+                                })
                                 return
                             }
                             let messages = content.match(sentences) || []
@@ -111,7 +113,9 @@ module.exports = {
                             let delay = 0
                             for (const msg of marge) {
                                 setTimeout(() => {
-                                    void group.sendMessage(msg)
+                                    void group.sendMessage(msg).catch(e => {
+                                        this.logger.warn("发送消息失败：", e)
+                                    })
                                 }, delay)
                                 delay += Math.floor(Math.random() * 2000) + 1000
                             }
