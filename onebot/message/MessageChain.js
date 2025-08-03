@@ -37,11 +37,12 @@ class MessageChain {
                 }
                 else if (msg.type === "reply") {
                     try {
-                        client.getMsg(msg.data.id).then(msg => {
-                            if (msg.sender.user_id == id) {
-                                return true;
-                            }
-                        }).catch(() => { });
+                        let reply = yield client.getMsg(msg.data.id).catch(() => { });
+                        if (!reply)
+                            continue;
+                        if (reply.sender.user_id == id) {
+                            return true;
+                        }
                     }
                     catch (e) { }
                 }

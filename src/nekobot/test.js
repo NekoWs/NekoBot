@@ -32,9 +32,12 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-const OneBot_1 = require("../../onebot/OneBot");
 const child_process = __importStar(require("node:child_process"));
+const node_fs_1 = __importDefault(require("node:fs"));
 function zipTest() {
     let cwd = process.cwd();
     cwd = cwd.substring(cwd.lastIndexOf("/") + 1);
@@ -51,24 +54,13 @@ function zipTest() {
     });
 }
 function main() {
-    let client = new OneBot_1.Client("117.72.204.71", 3001, "NekoBot");
-    client.on("open", () => {
-        console.log("Open!");
-    });
-    client.on("group_message", event => {
-        let sender = event.sender;
-        if (sender.user_id !== 1689295608)
-            return;
-        event.getGroup().then(group => {
-            let message = event.message;
-            for (let msg of message.chain) {
-                if (msg.type === "reply") {
-                    client.getMsg(msg.data.id).then(msg => {
-                        group === null || group === void 0 ? void 0 : group.sendMessage(`ReplySender: ${msg.sender.user_id}`);
-                    });
-                }
-            }
-        });
-    });
+    let msg = JSON.parse(node_fs_1.default.readFileSync("messages.json", "utf-8"));
+    let tmp = {};
+    for (const id of Object.keys(msg)) {
+        let m = msg[id];
+        m.splice(0, 2);
+        tmp[id] = m;
+    }
+    node_fs_1.default.writeFileSync("cleared.json", JSON.stringify(tmp));
 }
 main();

@@ -1,5 +1,5 @@
 import {AbstractPlugin} from "../src/nekobot/plugin/AbstractPlugin"
-import { OpenAI } from "openai"
+import {OpenAI} from "openai"
 import * as fs from "node:fs";
 import {ChatCompletionMessageParam} from "openai/resources/chat/completions/completions";
 import {MessageBuilder} from "../onebot/message/MessageBuilder";
@@ -17,11 +17,22 @@ function loadMessages(): void {
     if (!fs.existsSync(messageFile)) {
         fs.writeFileSync(messageFile, JSON.stringify({}))
     }
-    messages = JSON.parse(fs.readFileSync(messageFile, "utf8"));
+    let tmp = JSON.parse(fs.readFileSync(messageFile, "utf8"))
+    for (const id of Object.keys(tmp)) {
+        let message: ChatCompletionMessageParam[] = tmp[id]
+
+        messages[id] = [...emptyMsg, ...message]
+    }
 }
 
 function saveMessages(): void {
-    fs.writeFileSync(messageFile, JSON.stringify(messages));
+    let tmp: any = {}
+    for (const id of Object.keys(messages)) {
+        let msg: ChatCompletionMessageParam[] = [...messages[id]]
+        msg.splice(0, 2)
+        tmp[id] = msg
+    }
+    fs.writeFileSync(messageFile, JSON.stringify(tmp))
 }
 
 function readSync(path: string): string {
@@ -141,12 +152,14 @@ module.exports = {
 
             const sentences = /([^。?!？！]+[。?!？！\n\t]?)/ig
             let lastMessage = -1
-            let lastSender = -1
+            let lastSender: any = {}
             let typing = false
 
             setInterval(() => {
                 if (queue.length < 1 || typing) return
                 let current = queue[0]
+                let group = current.group_id
+                let last = lastSender[group] || -1
                 let messages = current.messages
                 if (messages.length < 1) {
                     queue.shift()
@@ -154,9 +167,9 @@ module.exports = {
                 }
                 let msg = messages.shift()
                 let mb = new MessageBuilder()
-                if (lastMessage != current.message_id || lastSender != current.user_id) {
+                if (lastMessage != current.message_id || last != current.user_id) {
                     mb.reply(current.message_id)
-                    lastSender = current.user_id
+                    lastSender[group] = current.user_id
                 }
                 mb.append(msg)
                 lastMessage = current.message_id
@@ -171,7 +184,8 @@ module.exports = {
             }, 100)
 
             this.client.on("group_message", async (event) => {
-                lastSender = event.user_id
+
+                lastSender[event.group_id] = event.user_id
 
                 let message = event.message
                 let cue = await message.isCue(this.client.bot_id, this.client).catch(() => { return false })
@@ -180,6 +194,7 @@ module.exports = {
                 let sender = event.sender
                 let group = await event.group.catch(() => {})
                 if (!group) return
+
                 let msg = event.message.toString(true)
                 // 最大处理字数 300
                 if (msg.length > 300) {
@@ -207,7 +222,10 @@ module.exports = {
                     let content = message.content
                     if (!content) return
                     addMessage(sender.user_id, message)
-                    if (content.match("PASS")) return
+                    if (content.match("PASS")) {
+                        setMessages(sender.user_id, backup)
+                        return
+                    }
                     if (content.match("BREAK")) {
                         setMessages(sender.user_id, backup)
                         let mb = new MessageBuilder()

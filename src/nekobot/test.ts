@@ -1,6 +1,7 @@
 import {Client} from "../../onebot/OneBot";
 import * as child_process from "node:child_process";
 import {MessageBuilder} from "../../onebot/message/MessageBuilder";
+import fs from "node:fs";
 
 function zipTest() {
     let cwd = process.cwd()
@@ -19,23 +20,13 @@ function zipTest() {
     })
 }
 function main() {
-    let client = new Client("117.72.204.71", 3001, "NekoBot")
-    client.on("open", () => {
-        console.log("Open!")
-    })
-    client.on("group_message", async event => {
-        let sender = event.sender
-        if (sender.user_id !== 1689295608) return
-        let group = await event.group.catch(() => {})
-        if (!group) return
-        let message = event.message
-        for (let msg of message.chain) {
-            if (msg.type === "reply") {
-                client.getMsg(msg.data.id).then(msg => {
-                    group?.sendMessage(`ReplySender: ${msg.sender.user_id}`)
-                })
-            }
-        }
-    })
+    let msg = JSON.parse(fs.readFileSync("messages.json", "utf-8"))
+    let tmp: any = {}
+    for (const id of Object.keys(msg)) {
+        let m = msg[id]
+        m.splice(0, 2)
+        tmp[id] = m
+    }
+    fs.writeFileSync("cleared.json", JSON.stringify(tmp))
 }
 main()

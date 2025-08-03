@@ -6,7 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const node_fs_1 = __importDefault(require("node:fs"));
 const AbstractPlugin_1 = require("../src/nekobot/plugin/AbstractPlugin");
 const Timing_1 = require("./libs/Timing");
-const messages = JSON.parse(node_fs_1.default.readFileSync("messages.json", "utf8"));
+const messages = JSON.parse(node_fs_1.default.readFileSync("alerts.json", "utf8"));
 let groups = [];
 function random(array) {
     if (!array)

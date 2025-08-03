@@ -8,7 +8,7 @@ class GroupMessageEvent extends MessageEvent_1.MessageEvent {
     /**
      * 获取群
      */
-    getGroup() {
+    get group() {
         return new Promise((resolve, reject) => {
             this.client.send(new Action_1.Action("get_group_info", {
                 group_id: this.group_id,
@@ -18,7 +18,7 @@ class GroupMessageEvent extends MessageEvent_1.MessageEvent {
                     return;
                 }
                 if (!data.data) {
-                    resolve(null);
+                    reject(data.message);
                     return;
                 }
                 resolve(new Group_1.Group(data.data, this.client));

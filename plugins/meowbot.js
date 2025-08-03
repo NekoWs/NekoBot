@@ -58,10 +58,20 @@ function loadMessages() {
     if (!fs.existsSync(messageFile)) {
         fs.writeFileSync(messageFile, JSON.stringify({}));
     }
-    messages = JSON.parse(fs.readFileSync(messageFile, "utf8"));
+    let tmp = JSON.parse(fs.readFileSync(messageFile, "utf8"));
+    for (const id of Object.keys(tmp)) {
+        let message = tmp[id];
+        messages[id] = [...emptyMsg, ...message];
+    }
 }
 function saveMessages() {
-    fs.writeFileSync(messageFile, JSON.stringify(messages));
+    let tmp = {};
+    for (const id of Object.keys(messages)) {
+        let msg = [...messages[id]];
+        msg.splice(0, 2);
+        tmp[id] = msg;
+    }
+    fs.writeFileSync(messageFile, JSON.stringify(tmp));
 }
 function readSync(path) {
     if (!fs.existsSync(path)) {
@@ -165,12 +175,14 @@ module.exports = {
             loadMessages();
             const sentences = /([^。?!？！]+[。?!？！\n\t]?)/ig;
             let lastMessage = -1;
-            let lastSender = -1;
+            let lastSender = {};
             let typing = false;
             setInterval(() => {
                 if (queue.length < 1 || typing)
                     return;
                 let current = queue[0];
+                let group = current.group_id;
+                let last = lastSender[group] || -1;
                 let messages = current.messages;
                 if (messages.length < 1) {
                     queue.shift();
@@ -178,9 +190,9 @@ module.exports = {
                 }
                 let msg = messages.shift();
                 let mb = new MessageBuilder_1.MessageBuilder();
-                if (lastMessage != current.message_id || lastSender != current.user_id) {
+                if (lastMessage != current.message_id || last != current.user_id) {
                     mb.reply(current.message_id);
-                    lastSender = current.user_id;
+                    lastSender[group] = current.user_id;
                 }
                 mb.append(msg);
                 lastMessage = current.message_id;
@@ -193,95 +205,91 @@ module.exports = {
                     });
                 }, msg.length * 500);
             }, 100);
-            this.client.on("group_message", (event) => {
-                lastSender = event.user_id;
+            this.client.on("group_message", (event) => __awaiter(this, void 0, void 0, function* () {
+                lastSender[event.group_id] = event.user_id;
                 let message = event.message;
-                message.isCue(this.client.bot_id, this.client).then(cue => {
-                    if (!cue)
+                let cue = yield message.isCue(this.client.bot_id, this.client).catch(() => { return false; });
+                if (!cue)
+                    return;
+                let sender = event.sender;
+                let group = yield event.group.catch(() => { });
+                if (!group)
+                    return;
+                let msg = event.message.toString(true);
+                // 最大处理字数 300
+                if (msg.length > 300) {
+                    group.sendMessage(new MessageBuilder_1.MessageBuilder()
+                        .at(sender.user_id)
+                        .append(" 好多字... 咱看不过来了...")
+                        .build()).catch(_ => { });
+                    return;
+                }
+                let time = new Date();
+                let formatted = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()} ${time.getHours()}:${time.getMinutes()}`;
+                let content = `[${formatted}] ${msg.replace(`[@${event.self_id}]`, "")}`;
+                this.logger.info(`[${group.group_name}] ${sender.nickname}: ${msg}`);
+                // 停止传播事件
+                event.stopPropagation();
+                // 备份在 BREAK 前的消息记录
+                let backup = [...getMessage(sender.user_id)];
+                sendMessage(addMessage(sender.user_id, {
+                    role: "user",
+                    content: content
+                })).then(message => {
+                    if (!message)
                         return;
-                    let sender = event.sender;
-                    event.getGroup().then(group => {
-                        if (!group)
-                            return;
-                        let msg = event.message.toString(true);
-                        // 最大处理字数 300
-                        if (msg.length > 300) {
-                            group.sendMessage(new MessageBuilder_1.MessageBuilder()
-                                .at(sender.user_id)
-                                .append(" 好多字... 咱看不过来了...")
-                                .build()).catch(_ => { });
-                            return;
-                        }
-                        let time = new Date();
-                        let formatted = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()} ${time.getHours()}:${time.getMinutes()}`;
-                        let content = `[${formatted}] ${msg.replace(`[@${event.self_id}]`, "")}`;
-                        this.logger.info(`[${group.group_name}] ${sender.nickname}: ${msg}`);
-                        // 停止传播事件
-                        event.stopPropagation();
-                        // 备份在 BREAK 前的消息记录
-                        let backup = [...getMessage(sender.user_id)];
-                        sendMessage(addMessage(sender.user_id, {
-                            role: "user",
-                            content: content
-                        })).then(message => {
-                            if (!message)
-                                return;
-                            let content = message.content;
-                            if (!content)
-                                return;
-                            addMessage(sender.user_id, message);
-                            if (content.match("PASS"))
-                                return;
-                            if (content.match("BREAK")) {
-                                setMessages(sender.user_id, backup);
-                                let mb = new MessageBuilder_1.MessageBuilder();
-                                mb.at(sender.user_id)
-                                    .append(" ")
-                                    .append("不想聊这个话题了喵！");
-                                group.sendMessage(mb.build()).catch(e => {
-                                    this.logger.warn("发送消息失败：", e);
-                                });
-                                return;
-                            }
-                            let messages = content.match(sentences) || [];
-                            let marge = [];
-                            let buf = "";
-                            // 合并短消息，比如 “喵？” 不应该单独发送
-                            messages.forEach(msg => {
-                                if (buf.length < 8) {
-                                    buf += msg.trim();
-                                    return;
-                                }
-                                marge.push(buf);
-                                buf = msg;
-                            });
-                            marge.push(buf);
-                            // 将消息添加进队列
-                            queue.push({
-                                messages: marge,
-                                group_id: event.group_id,
-                                user_id: sender.user_id,
-                                message_id: event.message_id
-                            });
-                            // let delay = 0
-                            // for (const msg of marge) {
-                            //     setTimeout(() => {
-                            //         void group.sendMessage(msg).catch(e => {
-                            //             this.logger.warn("发送消息失败：", e)
-                            //         })
-                            //     }, delay)
-                            //     delay += Math.floor(Math.random() * 2000) + 1000
-                            // }
-                        }).catch(e => {
+                    let content = message.content;
+                    if (!content)
+                        return;
+                    addMessage(sender.user_id, message);
+                    if (content.match("PASS")) {
+                        setMessages(sender.user_id, backup);
+                        return;
+                    }
+                    if (content.match("BREAK")) {
+                        setMessages(sender.user_id, backup);
+                        let mb = new MessageBuilder_1.MessageBuilder();
+                        mb.at(sender.user_id)
+                            .append(" ")
+                            .append("不想聊这个话题了喵！");
+                        group.sendMessage(mb.build()).catch(e => {
                             this.logger.warn("发送消息失败：", e);
                         });
-                    }).catch(e => {
-                        this.logger.warn("获取群信息失败：", e);
+                        return;
+                    }
+                    let messages = content.match(sentences) || [];
+                    let marge = [];
+                    let buf = "";
+                    // 合并短消息，比如 “喵？” 不应该单独发送
+                    messages.forEach(msg => {
+                        if (buf.length < 8) {
+                            buf += msg.trim();
+                            return;
+                        }
+                        marge.push(buf);
+                        buf = msg;
                     });
+                    marge.push(buf);
+                    // 将消息添加进队列
+                    queue.push({
+                        messages: marge,
+                        group_id: event.group_id,
+                        user_id: sender.user_id,
+                        message_id: event.message_id
+                    });
+                    // let delay = 0
+                    // for (const msg of marge) {
+                    //     setTimeout(() => {
+                    //         void group.sendMessage(msg).catch(e => {
+                    //             this.logger.warn("发送消息失败：", e)
+                    //         })
+                    //     }, delay)
+                    //     delay += Math.floor(Math.random() * 2000) + 1000
+                    // }
                 }).catch(e => {
-                    this.logger.warn("获取相关性失败：", e);
+                    this.logger.warn("发送消息失败：", e);
                 });
-            });
+            }));
         }
     }
 };
