@@ -8,8 +8,8 @@ export class GroupMessageEvent extends MessageEvent {
     /**
      * 获取群
      */
-    getGroup(): Promise<Group | null> {
-        return new Promise<Group | null>((resolve, reject) => {
+    get group(): Promise<Group> {
+        return new Promise<Group>((resolve, reject) => {
             this.client.send(new Action("get_group_info", {
                 group_id: this.group_id,
             })).then(data => {
@@ -18,7 +18,7 @@ export class GroupMessageEvent extends MessageEvent {
                     return
                 }
                 if (!data.data) {
-                    resolve(null)
+                    reject(data.message)
                     return
                 }
                 resolve(new Group(data.data, this.client))

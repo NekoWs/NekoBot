@@ -23,12 +23,19 @@ function main() {
     client.on("open", () => {
         console.log("Open!")
     })
-    client.on("group_message", event => {
+    client.on("group_message", async event => {
         let sender = event.sender
         if (sender.user_id !== 1689295608) return
-        event.getGroup().then(group => {
-            group?.sendMessage(new MessageBuilder().reply(event.message_id).append(" 回复测试").build())
-        })
+        let group = await event.group.catch(() => {})
+        if (!group) return
+        let message = event.message
+        for (let msg of message.chain) {
+            if (msg.type === "reply") {
+                client.getMsg(msg.data.id).then(msg => {
+                    group?.sendMessage(`ReplySender: ${msg.sender.user_id}`)
+                })
+            }
+        }
     })
 }
 main()

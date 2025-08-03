@@ -3,7 +3,7 @@ import {Group} from "../onebot/contact/Group";
 import {AbstractPlugin} from "../src/nekobot/plugin/AbstractPlugin";
 import {Time, Timing, TimingTask} from "./libs/Timing";
 
-const messages: any = JSON.parse(fs.readFileSync("messages.json", "utf8"))
+const messages: any = JSON.parse(fs.readFileSync("alerts.json", "utf8"))
 let groups: Group[] = []
 
 function random<T>(array: Array<T>): T {

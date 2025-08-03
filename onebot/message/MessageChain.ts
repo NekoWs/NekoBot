@@ -1,5 +1,6 @@
 import {Message, MessageTypeMap} from "./Message";
 import {Client} from "../OneBot";
+import * as repl from "node:repl";
 
 /**
  * 消息链
@@ -27,11 +28,11 @@ export class MessageChain {
                 }
             } else if (msg.type === "reply") {
                 try {
-                    client.getMsg(msg.data.id).then(msg => {
-                        if (msg.sender.user_id == id) {
-                            return true
-                        }
-                    }).catch(() => {})
+                    let reply = await client.getMsg(msg.data.id).catch(() => {})
+                    if (!reply) continue
+                    if (reply.sender.user_id == id) {
+                        return true
+                    }
                 } catch (e) { }
             }
         }

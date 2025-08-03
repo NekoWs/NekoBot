@@ -35,7 +35,6 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const OneBot_1 = require("../../onebot/OneBot");
 const child_process = __importStar(require("node:child_process"));
-const MessageBuilder_1 = require("../../onebot/message/MessageBuilder");
 function zipTest() {
     let cwd = process.cwd();
     cwd = cwd.substring(cwd.lastIndexOf("/") + 1);
@@ -61,7 +60,14 @@ function main() {
         if (sender.user_id !== 1689295608)
             return;
         event.getGroup().then(group => {
-            group === null || group === void 0 ? void 0 : group.sendMessage(new MessageBuilder_1.MessageBuilder().reply(event.message_id).append(" 回复测试").build());
+            let message = event.message;
+            for (let msg of message.chain) {
+                if (msg.type === "reply") {
+                    client.getMsg(msg.data.id).then(msg => {
+                        group === null || group === void 0 ? void 0 : group.sendMessage(`ReplySender: ${msg.sender.user_id}`);
+                    });
+                }
+            }
         });
     });
 }
