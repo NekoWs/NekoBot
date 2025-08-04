@@ -1,10 +1,15 @@
-import {RecallEvent} from "./RecallEvent";
+import {GroupNoticeEvent} from "./GroupNoticeEvent";
 
-export class GroupRecallEvent extends RecallEvent {
+export class GroupRecallEvent extends GroupNoticeEvent {
     /**
-     * 撤回消息的群号
+     * 被撤回的消息 ID
      */
-    readonly group_id: number
+    readonly message_id: number
+
+    /**
+     * 被撤回的消息的发送者
+     */
+    readonly user_id: number
 
     /**
      * 撤回者 ID
@@ -13,7 +18,8 @@ export class GroupRecallEvent extends RecallEvent {
 
     constructor(payload: any) {
         super(payload)
-        this.group_id = payload.group_id
+        this.message_id = payload.message_id
+        this.user_id = payload.user_id
         this.operator_id = payload.operator_id
     }
 }

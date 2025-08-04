@@ -15,6 +15,12 @@ const GroupBanEvent_1 = require("./events/notice/GroupBanEvent");
 const OpenEvent_1 = require("./events/OpenEvent");
 const HeartBeatEvent_1 = require("./events/HeartBeatEvent");
 const LifeCycleEvent_1 = require("./events/LifeCycleEvent");
+const GroupAdminEvent_1 = require("./events/notice/GroupAdminEvent");
+const GroupIncreaseEvent_1 = require("./events/notice/GroupIncreaseEvent");
+const GroupNameEvent_1 = require("./events/notice/GroupNameEvent");
+const GroupNoticeEvent_1 = require("./events/notice/GroupNoticeEvent");
+const GroupDecreaseEvent_1 = require("./events/notice/GroupDecreaseEvent");
+const EssenceEvent_1 = require("./events/notice/EssenceEvent");
 class Pair {
     constructor(first, second) {
         this.first = first;
@@ -86,6 +92,9 @@ class Client {
                                         case "poke":
                                             this.emit("notify_poke_notice", new PokeEvent_1.PokeEvent(data));
                                             break;
+                                        case "group_name":
+                                            this.emit("notify_group_name_notice", new GroupNameEvent_1.GroupNameEvent(data));
+                                            break;
                                     }
                                     break;
                                 case "group_ban":
@@ -97,6 +106,18 @@ class Client {
                                 case "group_recall":
                                     this.emit("group_recall_notice", new GroupRecallEvent_1.GroupRecallEvent(data));
                                     break;
+                                case "group_admin":
+                                    this.emit("group_admin_notice", new GroupAdminEvent_1.GroupAdminEvent(data));
+                                    break;
+                                case "group_increase":
+                                    this.emit("group_increase_notice", new GroupIncreaseEvent_1.GroupIncreaseEvent(data));
+                                    break;
+                                case "group_decrease":
+                                    this.emit("group_decrease_notice", new GroupDecreaseEvent_1.GroupDecreaseEvent(data));
+                                    break;
+                                case "essence":
+                                    this.emit("essence_notice", new EssenceEvent_1.EssenceEvent(data));
+                                    break;
                             }
                     }
                     return;
@@ -106,10 +127,12 @@ class Client {
                     console.warn("unknown handler: ", data);
                     return;
                 }
-                if (data.retcode !== 0) {
+                if (data.retcode != 0) {
+                    // reject
                     handler.second(data);
                 }
                 else {
+                    // solve
                     handler.first(data);
                 }
             };
@@ -215,15 +238,22 @@ class Client {
      */
     emit(type, event) {
         try {
-            for (let listener of this.listeners[type] || []) {
-                listener(event);
-                if (event.isStopped()) {
-                    break;
-                }
+            this._emit(type, event);
+            this._emit("event", event);
+            if (event instanceof GroupNoticeEvent_1.GroupNoticeEvent) {
+                this._emit("group_notice", event);
             }
         }
         catch (e) {
             console.error(`Error on${type}: ${e}`);
+        }
+    }
+    _emit(type, event) {
+        for (let listener of this.listeners[type] || []) {
+            listener(event);
+            if (event.isStopped()) {
+                break;
+            }
         }
     }
     /**

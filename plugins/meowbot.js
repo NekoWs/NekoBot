@@ -158,12 +158,42 @@ function sendMessage(messages) {
         return openAi.chat.completions.create({
             model: "deepseek-chat",
             messages: messages,
-            temperature: 1.7
+            temperature: 1.2
         }).then(response => {
             return response.choices[0].message;
         }).catch(_ => {
             return null;
         });
+    });
+}
+/**
+ * 是否提及指定 QQ
+ *
+ * @param chain 消息链
+ * @param id QQ
+ * @param client 客户端
+ */
+function isCue(chain, id, client) {
+    return __awaiter(this, void 0, void 0, function* () {
+        for (let msg of chain.chain) {
+            if (msg.type === "at") {
+                if (msg.data.qq == id) {
+                    return true;
+                }
+            }
+            else if (msg.type === "reply") {
+                try {
+                    let reply = yield client.getMsg(msg.data.id).catch(() => { });
+                    if (!reply)
+                        continue;
+                    if (reply.sender.user_id == id) {
+                        return true;
+                    }
+                }
+                catch (e) { }
+            }
+        }
+        return false;
     });
 }
 const queue = [];
@@ -205,10 +235,12 @@ module.exports = {
                     });
                 }, msg.length * 500);
             }, 100);
+            this.client.on("notify_poke_notice", e => {
+            });
             this.client.on("group_message", (event) => __awaiter(this, void 0, void 0, function* () {
                 lastSender[event.group_id] = event.user_id;
                 let message = event.message;
-                let cue = yield message.isCue(this.client.bot_id, this.client).catch(() => { return false; });
+                let cue = yield isCue(message, this.client.bot_id, this.client).catch(() => { return false; });
                 if (!cue)
                     return;
                 let sender = event.sender;

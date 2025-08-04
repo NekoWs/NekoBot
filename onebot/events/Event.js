@@ -25,9 +25,11 @@ class Event {
      */
     constructor(payload) {
         this.stopped = false;
+        this.raw_data = payload;
         this.time = payload.time;
         this.self_id = payload.self_id;
         this.post_type = payload.post_type;
+        this.sub_type = payload.sub_type;
     }
 }
 exports.Event = Event;

@@ -15,6 +15,18 @@ import {OpenEvent} from "./events/OpenEvent";
 import {HeartBeatEvent} from "./events/HeartBeatEvent";
 import {LifeCycleEvent} from "./events/LifeCycleEvent";
 import {MessageChain} from "./message/MessageChain";
+import {GroupAdminEvent} from "./events/notice/GroupAdminEvent";
+import {GroupIncreaseEvent} from "./events/notice/GroupIncreaseEvent";
+import {GroupNameEvent} from "./events/notice/GroupNameEvent";
+import {GroupNoticeEvent} from "./events/notice/GroupNoticeEvent";
+import {GroupDecreaseEvent} from "./events/notice/GroupDecreaseEvent";
+import {EssenceEvent} from "./events/notice/EssenceEvent";
+import {GroupTitleEvent} from "./events/notice/GroupTitleEvent";
+import {ProfileLikeEvent} from "./events/notice/ProfileLikeEvent";
+import {GroupUploadEvent} from "./events/notice/GroupUploadEvent";
+import {GroupMsgEmojiLike} from "./events/notice/GroupMsgEmojiLike";
+import {FriendAddEvent} from "./events/notice/FriendAddEvent";
+import {InputStatusEvent} from "./events/notice/InputStatusEvent";
 
 class Pair<T> {
     constructor(public first: T, public second: T) { }
@@ -24,6 +36,7 @@ export const bots = new Map<number, Client>()
 
 type EventMap = {
     open:                       OpenEvent,          // [x] 连接成功事件
+    event:                      Event,              // [x] 所有事件
     meta_event:                 Event,              // [x] 元事件
     lifecycle:                  LifeCycleEvent,     // [x] 生命周期
     heartbeat:                  HeartBeatEvent,     // [x] 心跳
@@ -38,20 +51,23 @@ type EventMap = {
     add_group_request:          Event,              // [ ] 加群请求事件
     invite_group_request:       Event,              // [ ] 邀请登录号入群
     notice:                     NoticeEvent,        // [x] 通知事件
-    friend_add_notice:          Event,              // [ ] 好友添加事件
+    friend_add_notice:          FriendAddEvent,     // [x] 好友添加事件
     friend_recall_notice:       FriendRecallEvent,  // [x] 好友撤回事件
-    group_admin_notice:         Event,              // [ ] 群管理员变动事件
+    group_notice:               GroupNoticeEvent,   // [x] 群通知事件
+    group_admin_notice:         GroupAdminEvent,    // [x] 群管理员变动事件
     group_ban_notice:           GroupBanEvent,      // [x] 群禁言事件
-    group_card_notice:          Event,              // [ ] 群资料卡更新事件
-    group_decrease_notice:      Event,              // [ ] 群成员减少事件
-    group_increase_notice:      Event,              // [ ] 群成员增加事件
+    group_card_notice:          Event,              // [ ] 群成员名片更新事件
+    group_decrease_notice:      GroupDecreaseEvent, // [x] 群成员减少事件
+    group_increase_notice:      GroupIncreaseEvent, // [x] 群成员增加事件
     group_recall_notice:        GroupRecallEvent,   // [x] 群撤回消息事件
-    group_upload_notice:        Event,              // [ ] 群文件上传事件
-    essence_notice:             Event,              // [ ] 群设精事件
+    group_upload_notice:        GroupUploadEvent,   // [x] 群文件上传事件
+    group_msg_emoji_like:       GroupMsgEmojiLike,  // [x] 群消息表情回应
+    essence_notice:             EssenceEvent,       // [x] 群设精事件
     notify_poke_notice:         PokeEvent,          // [x] 戳一戳事件
-    notify_input_status_notice: Event,              // [ ] 输入状态更新事件
-    notify_title_notice:        Event,              // [ ] 群头衔变更事件
-    notify_profile_like_notice: Event               // [ ] 资料卡点赞事件
+    notify_input_status_notice: InputStatusEvent,   // [ ] 输入状态更新事件
+    notify_title_notice:        GroupTitleEvent,    // [x] 群头衔变更事件
+    notify_profile_like_notice: ProfileLikeEvent    // [x] 资料卡点赞事件
+    notify_group_name_notice:   GroupNameEvent,     // [x] 群名修改事件
 }
 
 export class Client {
@@ -125,6 +141,18 @@ export class Client {
                                         case "poke":
                                             this.emit("notify_poke_notice", new PokeEvent(data))
                                             break
+                                        case "group_name":
+                                            this.emit("notify_group_name_notice", new GroupNameEvent(data))
+                                            break
+                                        case "title":
+                                            this.emit("notify_title_notice", new GroupTitleEvent(data))
+                                            break
+                                        case "profile_like":
+                                            this.emit("notify_profile_like_notice", new ProfileLikeEvent(data))
+                                            break
+                                        case "input_status":
+                                            this.emit("notify_input_status_notice", new InputStatusEvent(data))
+                                            break
                                     }
                                     break
                                 case "group_ban":
@@ -136,6 +164,27 @@ export class Client {
                                 case "group_recall":
                                     this.emit("group_recall_notice", new GroupRecallEvent(data))
                                     break
+                                case "group_admin":
+                                    this.emit("group_admin_notice", new GroupAdminEvent(data))
+                                    break
+                                case "group_increase":
+                                    this.emit("group_increase_notice", new GroupIncreaseEvent(data))
+                                    break
+                                case "group_decrease":
+                                    this.emit("group_decrease_notice", new GroupDecreaseEvent(data))
+                                    break
+                                case "essence":
+                                    this.emit("essence_notice", new EssenceEvent(data))
+                                    break
+                                case "group_upload":
+                                    this.emit("group_upload_notice", new GroupUploadEvent(data))
+                                    break
+                                case "group_msg_emoji_like":
+                                    this.emit("group_msg_emoji_like", new GroupMsgEmojiLike(data))
+                                    break
+                                case "friend_add":
+                                    this.emit("friend_add_notice", new FriendAddEvent(data))
+                                    break
                             }
                     }
                     return
@@ -145,9 +194,11 @@ export class Client {
                     console.warn("unknown handler: ", data)
                     return
                 }
-                if (data.retcode !== 0) {
+                if (data.retcode != 0) {
+                    // reject
                     handler.second(data)
                 } else {
+                    // solve
                     handler.first(data)
                 }
             }
@@ -263,14 +314,22 @@ export class Client {
      */
     emit<K extends keyof EventMap>(type: K, event: EventMap[K]) {
         try {
-            for (let listener of this.listeners[type] || []) {
-                listener(event)
-                if (event.isStopped()) {
-                    break
-                }
+            this._emit(type, event)
+            this._emit("event", event)
+            if (event instanceof GroupNoticeEvent) {
+                this._emit("group_notice", event)
             }
         } catch (e) {
             console.error(`Error on${type}: ${e}`)
+        }
+    }
+
+    private _emit<K extends keyof EventMap>(type: K, event: EventMap[K]) {
+        for (let listener of this.listeners[type] || []) {
+            listener(event)
+            if (event.isStopped()) {
+                break
+            }
         }
     }
 

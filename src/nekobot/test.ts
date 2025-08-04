@@ -2,6 +2,13 @@ import {Client} from "../../onebot/OneBot";
 import * as child_process from "node:child_process";
 import {MessageBuilder} from "../../onebot/message/MessageBuilder";
 import fs from "node:fs";
+import {HeartBeatEvent} from "../../onebot/events/HeartBeatEvent";
+import {PrivateMessageEvent} from "../../onebot/events/PrivateMessageEvent";
+import {MessageEvent} from "../../onebot/events/MessageEvent";
+import {LifeCycleEvent} from "../../onebot/events/LifeCycleEvent";
+import {GroupMessageEvent} from "../../onebot/events/GroupMessageEvent";
+import {OpenEvent} from "../../onebot/events/OpenEvent";
+import {PokeEvent} from "../../onebot/events/notice/PokeEvent";
 
 function zipTest() {
     let cwd = process.cwd()
@@ -20,13 +27,16 @@ function zipTest() {
     })
 }
 function main() {
-    let msg = JSON.parse(fs.readFileSync("messages.json", "utf-8"))
-    let tmp: any = {}
-    for (const id of Object.keys(msg)) {
-        let m = msg[id]
-        m.splice(0, 2)
-        tmp[id] = m
-    }
-    fs.writeFileSync("cleared.json", JSON.stringify(tmp))
+    let client = new Client("117.72.204.71", 3001, "NekoBot")
+    client.on("event", e => {
+        if (
+            e instanceof HeartBeatEvent ||
+            e instanceof LifeCycleEvent ||
+            e instanceof OpenEvent ||
+            e instanceof PokeEvent ||
+            e instanceof MessageEvent
+        ) return
+        console.log(e.raw_data)
+    })
 }
 main()

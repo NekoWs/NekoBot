@@ -32,12 +32,14 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
+const OneBot_1 = require("../../onebot/OneBot");
 const child_process = __importStar(require("node:child_process"));
-const node_fs_1 = __importDefault(require("node:fs"));
+const HeartBeatEvent_1 = require("../../onebot/events/HeartBeatEvent");
+const MessageEvent_1 = require("../../onebot/events/MessageEvent");
+const LifeCycleEvent_1 = require("../../onebot/events/LifeCycleEvent");
+const OpenEvent_1 = require("../../onebot/events/OpenEvent");
+const PokeEvent_1 = require("../../onebot/events/notice/PokeEvent");
 function zipTest() {
     let cwd = process.cwd();
     cwd = cwd.substring(cwd.lastIndexOf("/") + 1);
@@ -54,13 +56,15 @@ function zipTest() {
     });
 }
 function main() {
-    let msg = JSON.parse(node_fs_1.default.readFileSync("messages.json", "utf-8"));
-    let tmp = {};
-    for (const id of Object.keys(msg)) {
-        let m = msg[id];
-        m.splice(0, 2);
-        tmp[id] = m;
-    }
-    node_fs_1.default.writeFileSync("cleared.json", JSON.stringify(tmp));
+    let client = new OneBot_1.Client("117.72.204.71", 3001, "NekoBot");
+    client.on("event", e => {
+        if (e instanceof HeartBeatEvent_1.HeartBeatEvent ||
+            e instanceof LifeCycleEvent_1.LifeCycleEvent ||
+            e instanceof OpenEvent_1.OpenEvent ||
+            e instanceof PokeEvent_1.PokeEvent ||
+            e instanceof MessageEvent_1.MessageEvent)
+            return;
+        console.log(e.raw_data);
+    });
 }
 main();

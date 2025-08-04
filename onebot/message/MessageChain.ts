@@ -20,25 +20,6 @@ export class MessageChain {
         return this.chain.length
     }
 
-    async isCue(id: number, client: Client): Promise<boolean> {
-        for (let msg of this.chain) {
-            if (msg.type === "at") {
-                if (msg.data.qq == id) {
-                    return true
-                }
-            } else if (msg.type === "reply") {
-                try {
-                    let reply = await client.getMsg(msg.data.id).catch(() => {})
-                    if (!reply) continue
-                    if (reply.sender.user_id == id) {
-                        return true
-                    }
-                } catch (e) { }
-            }
-        }
-        return false
-    }
-
     /**
      * 将消息链转换为 JSON 格式
      */

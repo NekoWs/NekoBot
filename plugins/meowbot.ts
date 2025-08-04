@@ -4,6 +4,8 @@ import * as fs from "node:fs";
 import {ChatCompletionMessageParam} from "openai/resources/chat/completions/completions";
 import {MessageBuilder} from "../onebot/message/MessageBuilder";
 import {Sender} from "../onebot/contact/Sender";
+import {MessageChain} from "../onebot/message/MessageChain";
+import {Client} from "../onebot/OneBot";
 
 const openAi = new OpenAI({
     baseURL: "https://api.deepseek.com",
@@ -133,13 +135,41 @@ async function sendMessage(messages: ChatCompletionMessageParam[]) {
     return openAi.chat.completions.create({
         model: "deepseek-chat",
         messages: messages,
-        temperature: 1.7
+        temperature: 1.2
     }).then(response => {
         return response.choices[0].message
     }).catch(_ => {
         return null
     })
 }
+
+
+/**
+ * 是否提及指定 QQ
+ *
+ * @param chain 消息链
+ * @param id QQ
+ * @param client 客户端
+ */
+async function isCue(chain: MessageChain, id: number, client: Client): Promise<boolean> {
+    for (let msg of chain.chain) {
+        if (msg.type === "at") {
+            if (msg.data.qq == id) {
+                return true
+            }
+        } else if (msg.type === "reply") {
+            try {
+                let reply = await client.getMsg(msg.data.id).catch(() => {})
+                if (!reply) continue
+                if (reply.sender.user_id == id) {
+                    return true
+                }
+            } catch (e) { }
+        }
+    }
+    return false
+}
+
 
 const queue: any[] = []
 
@@ -183,12 +213,16 @@ module.exports = {
                 }, msg.length * 500)
             }, 100)
 
+            this.client.on("notify_poke_notice", e => {
+
+            })
+
             this.client.on("group_message", async (event) => {
 
                 lastSender[event.group_id] = event.user_id
 
                 let message = event.message
-                let cue = await message.isCue(this.client.bot_id, this.client).catch(() => { return false })
+                let cue = await isCue(message, this.client.bot_id, this.client).catch(() => { return false })
 
                 if (!cue) return
                 let sender = event.sender

@@ -1,12 +1,13 @@
 import {NoticeEvent} from "./NoticeEvent";
 
-export class RecallEvent extends NoticeEvent {
-    readonly message_id: number
+export class FriendAddEvent extends NoticeEvent {
+    /**
+     * 添加的好友 QQ 号
+     */
     readonly user_id: number
 
     constructor(payload: any) {
         super(payload)
-        this.message_id = payload.message_id
         this.user_id = payload.user_id
     }
 }

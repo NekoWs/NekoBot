@@ -1,7 +1,14 @@
 import {Event} from "../Event";
 
 export class NoticeEvent extends Event {
+    /**
+     * 提示类型
+     */
     readonly notice_type: string
+
+    /**
+     * 子类型
+     */
     readonly sub_type: string
 
     constructor(payload: any) {
