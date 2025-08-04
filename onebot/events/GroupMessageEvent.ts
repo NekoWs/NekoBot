@@ -9,21 +9,7 @@ export class GroupMessageEvent extends MessageEvent {
      * 获取群
      */
     get group(): Promise<Group> {
-        return new Promise<Group>((resolve, reject) => {
-            this.client.send(new Action("get_group_info", {
-                group_id: this.group_id,
-            })).then(data => {
-                if (data.retcode !== 0) {
-                    reject(data.message)
-                    return
-                }
-                if (!data.data) {
-                    reject(data.message)
-                    return
-                }
-                resolve(new Group(data.data, this.client))
-            }).catch(reject)
-        })
+        return this.client.getGroup(this.group_id)
     }
 
     /**

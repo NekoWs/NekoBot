@@ -28,15 +28,8 @@ function zipTest() {
 }
 function main() {
     let client = new Client("117.72.204.71", 3001, "NekoBot")
-    client.on("event", e => {
-        if (
-            e instanceof HeartBeatEvent ||
-            e instanceof LifeCycleEvent ||
-            e instanceof OpenEvent ||
-            e instanceof PokeEvent ||
-            e instanceof MessageEvent
-        ) return
-        console.log(e.raw_data)
+    client.on("private_message", e => {
+        console.log(e)
     })
 }
 main()

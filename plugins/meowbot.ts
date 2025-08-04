@@ -6,6 +6,7 @@ import {MessageBuilder} from "../onebot/message/MessageBuilder";
 import {Sender} from "../onebot/contact/Sender";
 import {MessageChain} from "../onebot/message/MessageChain";
 import {Client} from "../onebot/OneBot";
+import {Group} from "../onebot/contact/Group";
 
 const openAi = new OpenAI({
     baseURL: "https://api.deepseek.com",
@@ -72,6 +73,7 @@ let empAbout: ChatCompletionMessageParam[] = [
 
 let groupMessages: any = {}
 let groupCaches: any = {}
+let groupLastCue: any = {}
 
 function addCache(id: number, message: any) {
     let arr: any[] = groupCaches[id] || []
@@ -103,7 +105,7 @@ function emptyAbout() {
     return [...empAbout]
 }
 
-function getMessage(id: number) {
+function getMessage(id: number): any[] {
     return messages[id] || emptyMessage()
 }
 
@@ -112,10 +114,14 @@ function setMessages(id: number, _messages: any[]) {
     saveMessages()
 }
 
-export function addMessage(id: number, message: ChatCompletionMessageParam | undefined) {
+function addMessage(id: number, message: ChatCompletionMessageParam | undefined) {
     let msg = getMessage(id)
     if (!message) {
         return msg
+    }
+    // 记忆只有 2000 条（实际上因为输入限制是 64K 也有可能 2000 条就已经超过了）
+    if (msg.length > 2000) {
+        msg.splice(0, msg.length - 2000)
     }
     msg.push({
         role: message.role,
@@ -126,12 +132,7 @@ export function addMessage(id: number, message: ChatCompletionMessageParam | und
     return msg
 }
 
-export function clearMessage(id: number) {
-    messages[id] = emptyMessage()
-    saveMessages()
-}
-
-async function sendMessage(messages: ChatCompletionMessageParam[]) {
+async function requestChat(messages: ChatCompletionMessageParam[]) {
     return openAi.chat.completions.create({
         model: "deepseek-chat",
         messages: messages,
@@ -143,6 +144,75 @@ async function sendMessage(messages: ChatCompletionMessageParam[]) {
     })
 }
 
+const sentences = /([^。?!？！]+[。?!？！\n\t]?)/ig
+const queue: any[] = []
+
+function sendMessage(
+    group: Group,
+    user_id: number,
+    message: string,
+    message_id: number
+) {
+    // 最大处理字数 300
+    if (message.length > 300) {
+        group.sendMessage(
+            new MessageBuilder()
+                .at(user_id)
+                .append(" 好多字... 咱看不过来了...")
+                .build()
+        ).catch(_ => {})
+        return
+    }
+    let time = new Date()
+    let formatted = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()} ${time.getHours()}:${time.getMinutes()}`
+    let content = `[${formatted}] ${message}`
+
+    // 备份在 BREAK 前的消息记录
+    let backup = [...getMessage(user_id)]
+    requestChat(addMessage(user_id, {
+        role: "user",
+        content: content
+    })).then(message => {
+        if (!message) return
+        let content = message.content
+        if (!content) return
+        addMessage(user_id, message)
+        if (content.match("PASS")) {
+            setMessages(user_id, backup)
+            return
+        }
+        if (content.match("BREAK")) {
+            setMessages(user_id, backup)
+            let mb = new MessageBuilder()
+            mb.at(user_id)
+                .append(" ")
+                .append("不想聊这个话题了喵！")
+            group.sendMessage(mb.build()).catch(() => { })
+            return
+        }
+
+        let messages = content.match(sentences) || []
+        let marge: string[] = []
+        let buf = ""
+        // 合并短消息，比如 “喵？” 不应该单独发送
+        messages.forEach(msg => {
+            if (buf.length < 8) {
+                buf += msg.trim()
+                return
+            }
+            marge.push(buf)
+            buf = msg
+        })
+        marge.push(buf)
+        // 将消息添加进队列
+        queue.push({
+            messages: marge,
+            group_id: group.group_id,
+            user_id: user_id,
+            message_id: message_id
+        })
+    }).catch(() => { })
+}
 
 /**
  * 是否提及指定 QQ
@@ -170,9 +240,6 @@ async function isCue(chain: MessageChain, id: number, client: Client): Promise<b
     return false
 }
 
-
-const queue: any[] = []
-
 module.exports = {
     name: "MeowBot",
     description: "Meow meow...",
@@ -180,7 +247,6 @@ module.exports = {
         onEnable(): void {
             loadMessages()
 
-            const sentences = /([^。?!？！]+[。?!？！\n\t]?)/ig
             let lastMessage = -1
             let lastSender: any = {}
             let typing = false
@@ -210,11 +276,18 @@ module.exports = {
                     }).catch(e => {
                         this.logger.error("发送消息失败：", e)
                     })
-                }, msg.length * 500)
+                }, msg.length * (Math.random() * 300 + 200))
             }, 100)
 
-            this.client.on("notify_poke_notice", e => {
-
+            this.client.on("notify_poke_notice", async event => {
+                if (event.group_id == -1) return
+                let group = await this.client.getGroup(event.group_id)
+                sendMessage(
+                    group,
+                    event.user_id,
+                    "戳戳",
+                    -1
+                )
             })
 
             this.client.on("group_message", async (event) => {
@@ -225,85 +298,18 @@ module.exports = {
                 let cue = await isCue(message, this.client.bot_id, this.client).catch(() => { return false })
 
                 if (!cue) return
-                let sender = event.sender
                 let group = await event.group.catch(() => {})
                 if (!group) return
 
-                let msg = event.message.toString(true)
-                // 最大处理字数 300
-                if (msg.length > 300) {
-                    group.sendMessage(
-                        new MessageBuilder()
-                            .at(sender.user_id)
-                            .append(" 好多字... 咱看不过来了...")
-                            .build()
-                    ).catch(_ => {})
-                    return
-                }
-                let time = new Date()
-                let formatted = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()} ${time.getHours()}:${time.getMinutes()}`
-                let content = `[${formatted}] ${msg.replace(`[@${event.self_id}]`, "")}`
-                this.logger.info(`[${group.group_name}] ${sender.nickname}: ${msg}`)
+
+                sendMessage(
+                    group,
+                    event.user_id,
+                    message.toString(),
+                    event.message_id
+                )
                 // 停止传播事件
                 event.stopPropagation()
-                // 备份在 BREAK 前的消息记录
-                let backup = [...getMessage(sender.user_id)]
-                sendMessage(addMessage(sender.user_id, {
-                    role: "user",
-                    content: content
-                })).then(message => {
-                    if (!message) return
-                    let content = message.content
-                    if (!content) return
-                    addMessage(sender.user_id, message)
-                    if (content.match("PASS")) {
-                        setMessages(sender.user_id, backup)
-                        return
-                    }
-                    if (content.match("BREAK")) {
-                        setMessages(sender.user_id, backup)
-                        let mb = new MessageBuilder()
-                        mb.at(sender.user_id)
-                            .append(" ")
-                            .append("不想聊这个话题了喵！")
-                        group.sendMessage(mb.build()).catch(e => {
-                            this.logger.warn("发送消息失败：", e)
-                        })
-                        return
-                    }
-
-                    let messages = content.match(sentences) || []
-                    let marge: string[] = []
-                    let buf = ""
-                    // 合并短消息，比如 “喵？” 不应该单独发送
-                    messages.forEach(msg => {
-                        if (buf.length < 8) {
-                            buf += msg.trim()
-                            return
-                        }
-                        marge.push(buf)
-                        buf = msg
-                    })
-                    marge.push(buf)
-                    // 将消息添加进队列
-                    queue.push({
-                        messages: marge,
-                        group_id: event.group_id,
-                        user_id: sender.user_id,
-                        message_id: event.message_id
-                    })
-                    // let delay = 0
-                    // for (const msg of marge) {
-                    //     setTimeout(() => {
-                    //         void group.sendMessage(msg).catch(e => {
-                    //             this.logger.warn("发送消息失败：", e)
-                    //         })
-                    //     }, delay)
-                    //     delay += Math.floor(Math.random() * 2000) + 1000
-                    // }
-                }).catch(e => {
-                    this.logger.warn("发送消息失败：", e)
-                })
             })
         }
     }

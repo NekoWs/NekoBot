@@ -382,4 +382,27 @@ export class Client {
             }).catch(reject)
         })
     }
+
+    /**
+     * 获取群
+     *
+     * @param group_id 群号
+     */
+    async getGroup(group_id: number): Promise<Group> {
+        return new Promise<Group>((resolve, reject) => {
+            this.send(new Action("get_group_info", {
+                group_id: group_id,
+            })).then(data => {
+                if (data.retcode !== 0) {
+                    reject(data.message)
+                    return
+                }
+                if (!data.data) {
+                    reject(data.message)
+                    return
+                }
+                resolve(new Group(data.data, this))
+            }).catch(reject)
+        })
+    }
 }
