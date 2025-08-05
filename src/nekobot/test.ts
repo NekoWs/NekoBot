@@ -26,10 +26,8 @@ function zipTest() {
         }
     })
 }
+
 function main() {
-    let client = new Client("117.72.204.71", 3001, "NekoBot")
-    client.on("private_message", e => {
-        console.log(e)
-    })
+
 }
 main()

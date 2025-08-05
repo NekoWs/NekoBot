@@ -14,7 +14,6 @@ import {GroupBanEvent} from "./events/notice/GroupBanEvent";
 import {OpenEvent} from "./events/OpenEvent";
 import {HeartBeatEvent} from "./events/HeartBeatEvent";
 import {LifeCycleEvent} from "./events/LifeCycleEvent";
-import {MessageChain} from "./message/MessageChain";
 import {GroupAdminEvent} from "./events/notice/GroupAdminEvent";
 import {GroupIncreaseEvent} from "./events/notice/GroupIncreaseEvent";
 import {GroupNameEvent} from "./events/notice/GroupNameEvent";

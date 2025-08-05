@@ -40,7 +40,10 @@ export class Group {
             user_id: user_id,
             no_cache: no_cache
         })).then(data => {
-            return new Member(data, this.client)
+            if (data.retcode !== 0) {
+                throw new Error(data.message)
+            }
+            return new Member(data.data, this.client)
         })
     }
 

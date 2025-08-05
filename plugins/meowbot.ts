@@ -7,12 +7,13 @@ import {Sender} from "../onebot/contact/Sender";
 import {MessageChain} from "../onebot/message/MessageChain";
 import {Client} from "../onebot/OneBot";
 import {Group} from "../onebot/contact/Group";
+import { Logger } from "../src/nekobot/utils/Logger";
 
 const openAi = new OpenAI({
     baseURL: "https://api.deepseek.com",
     apiKey: fs.readFileSync("api-key.txt", "utf-8")
 })
-
+const admin = 1689295608
 const messageFile = "messages.json"
 let messages: any = {}
 
@@ -46,10 +47,12 @@ function readSync(path: string): string {
     return fs.readFileSync(path, "utf-8")
 }
 
-let prompt = readSync("./prompt.txt")
+let prompt = readSync("./prompt.txt").replaceAll("\n", "")
 
 // TODO 聊天相关性检测，在没有 AT 的情况下辨别是否在与bot聊天
 let about = readSync("./about.txt")
+
+let breakPrompt = readSync("./break.txt")
 
 let emptyMsg: ChatCompletionMessageParam[] = [
     {
@@ -119,9 +122,9 @@ function addMessage(id: number, message: ChatCompletionMessageParam | undefined)
     if (!message) {
         return msg
     }
-    // 记忆只有 2000 条（实际上因为输入限制是 64K 也有可能 2000 条就已经超过了）
-    if (msg.length > 2000) {
-        msg.splice(0, msg.length - 2000)
+    // 将记忆控制在 200 条以减少成本
+    if (msg.length > 200) {
+        msg.splice(0, msg.length - 200)
     }
     msg.push({
         role: message.role,
@@ -132,14 +135,15 @@ function addMessage(id: number, message: ChatCompletionMessageParam | undefined)
     return msg
 }
 
-async function requestChat(messages: ChatCompletionMessageParam[]) {
+async function requestChat(messages: ChatCompletionMessageParam[], temperature: number = 1.2) {
     return openAi.chat.completions.create({
         model: "deepseek-chat",
         messages: messages,
-        temperature: 1.2
+        temperature: temperature
     }).then(response => {
         return response.choices[0].message
-    }).catch(_ => {
+    }).catch(e => {
+        sendError(e)
         return null
     })
 }
@@ -147,11 +151,34 @@ async function requestChat(messages: ChatCompletionMessageParam[]) {
 const sentences = /([^。?!？！]+[。?!？！\n\t]?)/ig
 const queue: any[] = []
 
-function sendMessage(
+let logger: Logger
+
+function sendError(err: any) {
+    logger.error(err)
+}
+
+function toXX(num: number) {
+    if (num > 9) return String(num)
+    return `0${num}`
+}
+
+async function requestBreak() {
+    return requestChat([
+        ...emptyMsg, {
+            role: "system",
+            content: breakPrompt
+        }
+    ], 1.5)  // 使 BREAK 回复更多随机性
+}
+
+async function sendMessage(
     group: Group,
     user_id: number,
     message: string,
-    message_id: number
+    message_id: number,
+    bot_id: number,
+    ignore_break: boolean = false,
+    at: boolean = false
 ) {
     // 最大处理字数 300
     if (message.length > 300) {
@@ -160,21 +187,28 @@ function sendMessage(
                 .at(user_id)
                 .append(" 好多字... 咱看不过来了...")
                 .build()
-        ).catch(_ => {})
+        ).catch(sendError)
         return
     }
     let time = new Date()
-    let formatted = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()} ${time.getHours()}:${time.getMinutes()}`
+    let formatted = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()} ${toXX(time.getHours())}:${toXX(time.getMinutes())}:${toXX(time.getSeconds())}`
+    message = message.replaceAll(`[@${bot_id}]`, "").trim()
+
     let content = `[${formatted}] ${message}`
+    let member = await group.getMember(user_id).catch(sendError)
+    if (!member) return
+    logger.info(`${member.nickname}: ${content}`)
 
     // 备份在 BREAK 前的消息记录
     let backup = [...getMessage(user_id)]
-    requestChat(addMessage(user_id, {
-        role: "user",
-        content: content
-    })).then(message => {
+    requestChat(addMessage(
+        user_id, {
+            role: "user",
+            content: content
+        }
+    )).then(message => {
         if (!message) return
-        let content = message.content
+        let content = message.content?.replaceAll("\n", "")
         if (!content) return
         addMessage(user_id, message)
         if (content.match("PASS")) {
@@ -183,11 +217,19 @@ function sendMessage(
         }
         if (content.match("BREAK")) {
             setMessages(user_id, backup)
-            let mb = new MessageBuilder()
-            mb.at(user_id)
-                .append(" ")
-                .append("不想聊这个话题了喵！")
-            group.sendMessage(mb.build()).catch(() => { })
+            if (ignore_break) return
+
+            requestBreak().then(message => {
+                if (!message) return
+                // 将获取到的 BREAK 响应添加到回复队列
+                queue.push({
+                    messages: [message.content],
+                    group_id: group.group_id,
+                    user_id: user_id,
+                    message_id: message_id,
+                    at: at
+                })
+            })
             return
         }
 
@@ -209,9 +251,10 @@ function sendMessage(
             messages: marge,
             group_id: group.group_id,
             user_id: user_id,
-            message_id: message_id
+            message_id: message_id,
+            at: at
         })
-    }).catch(() => { })
+    }).catch(sendError)
 }
 
 /**
@@ -229,7 +272,7 @@ async function isCue(chain: MessageChain, id: number, client: Client): Promise<b
             }
         } else if (msg.type === "reply") {
             try {
-                let reply = await client.getMsg(msg.data.id).catch(() => {})
+                let reply = await client.getMsg(msg.data.id).catch(sendError)
                 if (!reply) continue
                 if (reply.sender.user_id == id) {
                     return true
@@ -245,6 +288,8 @@ module.exports = {
     description: "Meow meow...",
     plugin: class MeowPlugin extends AbstractPlugin {
         onEnable(): void {
+            logger = this.logger
+
             loadMessages()
 
             let lastMessage = -1
@@ -254,6 +299,8 @@ module.exports = {
             setInterval(() => {
                 if (queue.length < 1 || typing) return
                 let current = queue[0]
+                if (!current) return
+
                 let group = current.group_id
                 let last = lastSender[group] || -1
                 let messages = current.messages
@@ -267,46 +314,49 @@ module.exports = {
                     mb.reply(current.message_id)
                     lastSender[group] = current.user_id
                 }
+                if (current.at) {
+                    mb.at(current.user_id)
+                }
                 mb.append(msg)
                 lastMessage = current.message_id
                 typing = true
                 setTimeout(() => {
-                    this.client.sendGroupMessage(current.group_id, mb.build()).then(() => {
-                        typing = false
-                    }).catch(e => {
+                    this.client.sendGroupMessage(current.group_id, mb.build()).catch(e => {
                         this.logger.error("发送消息失败：", e)
+                    }).finally(() => {
+                        typing = false
                     })
-                }, msg.length * (Math.random() * 300 + 200))
+                }, msg.length * 200)
             }, 100)
 
-            this.client.on("notify_poke_notice", async event => {
-                if (event.group_id == -1) return
-                let group = await this.client.getGroup(event.group_id)
-                sendMessage(
-                    group,
-                    event.user_id,
-                    "戳戳",
-                    -1
-                )
-            })
-
             this.client.on("group_message", async (event) => {
-
-                lastSender[event.group_id] = event.user_id
-
                 let message = event.message
-                let cue = await isCue(message, this.client.bot_id, this.client).catch(() => { return false })
+                let sender = event.sender
 
-                if (!cue) return
-                let group = await event.group.catch(() => {})
+                lastSender[event.group_id] = sender.user_id
+                let group = await event.group.catch(sendError)
                 if (!group) return
 
+                // 暂时用于清空聊天记录
+                if (sender.user_id == admin) {
+                    let msg = message.toString().trim()
+                    if (msg.startsWith("DELETE")) {
+                        let uid = msg.substring(7)
+                        group.sendMessage("DELETED").catch(sendError)
+                        setMessages(Number(uid), [])
+                        return
+                    }
+                }
 
-                sendMessage(
+                let cue = await isCue(message, this.client.bot_id, this.client).catch(() => { return false })
+                if (!cue) return
+
+                await sendMessage(
                     group,
-                    event.user_id,
+                    sender.user_id,
                     message.toString(),
-                    event.message_id
+                    event.message_id,
+                    event.self_id
                 )
                 // 停止传播事件
                 event.stopPropagation()

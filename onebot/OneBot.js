@@ -21,6 +21,12 @@ const GroupNameEvent_1 = require("./events/notice/GroupNameEvent");
 const GroupNoticeEvent_1 = require("./events/notice/GroupNoticeEvent");
 const GroupDecreaseEvent_1 = require("./events/notice/GroupDecreaseEvent");
 const EssenceEvent_1 = require("./events/notice/EssenceEvent");
+const GroupTitleEvent_1 = require("./events/notice/GroupTitleEvent");
+const ProfileLikeEvent_1 = require("./events/notice/ProfileLikeEvent");
+const GroupUploadEvent_1 = require("./events/notice/GroupUploadEvent");
+const GroupMsgEmojiLike_1 = require("./events/notice/GroupMsgEmojiLike");
+const FriendAddEvent_1 = require("./events/notice/FriendAddEvent");
+const InputStatusEvent_1 = require("./events/notice/InputStatusEvent");
 class Pair {
     constructor(first, second) {
         this.first = first;
@@ -95,6 +101,15 @@ class Client {
                                         case "group_name":
                                             this.emit("notify_group_name_notice", new GroupNameEvent_1.GroupNameEvent(data));
                                             break;
+                                        case "title":
+                                            this.emit("notify_title_notice", new GroupTitleEvent_1.GroupTitleEvent(data));
+                                            break;
+                                        case "profile_like":
+                                            this.emit("notify_profile_like_notice", new ProfileLikeEvent_1.ProfileLikeEvent(data));
+                                            break;
+                                        case "input_status":
+                                            this.emit("notify_input_status_notice", new InputStatusEvent_1.InputStatusEvent(data));
+                                            break;
                                     }
                                     break;
                                 case "group_ban":
@@ -117,6 +132,15 @@ class Client {
                                     break;
                                 case "essence":
                                     this.emit("essence_notice", new EssenceEvent_1.EssenceEvent(data));
+                                    break;
+                                case "group_upload":
+                                    this.emit("group_upload_notice", new GroupUploadEvent_1.GroupUploadEvent(data));
+                                    break;
+                                case "group_msg_emoji_like":
+                                    this.emit("group_msg_emoji_like", new GroupMsgEmojiLike_1.GroupMsgEmojiLike(data));
+                                    break;
+                                case "friend_add":
+                                    this.emit("friend_add_notice", new FriendAddEvent_1.FriendAddEvent(data));
                                     break;
                             }
                     }
@@ -300,6 +324,28 @@ class Client {
                     return;
                 }
                 resolve(new MessageEvent_1.MessageEvent(data.data));
+            }).catch(reject);
+        });
+    }
+    /**
+     * 获取群
+     *
+     * @param group_id 群号
+     */
+    async getGroup(group_id) {
+        return new Promise((resolve, reject) => {
+            this.send(new Action_1.Action("get_group_info", {
+                group_id: group_id,
+            })).then(data => {
+                if (data.retcode !== 0) {
+                    reject(data.message);
+                    return;
+                }
+                if (!data.data) {
+                    reject(data.message);
+                    return;
+                }
+                resolve(new Group_1.Group(data.data, this));
             }).catch(reject);
         });
     }

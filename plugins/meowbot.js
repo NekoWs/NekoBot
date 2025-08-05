@@ -32,18 +32,7 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.addMessage = addMessage;
-exports.clearMessage = clearMessage;
 const AbstractPlugin_1 = require("../src/nekobot/plugin/AbstractPlugin");
 const openai_1 = require("openai");
 const fs = __importStar(require("node:fs"));
@@ -52,6 +41,7 @@ const openAi = new openai_1.OpenAI({
     baseURL: "https://api.deepseek.com",
     apiKey: fs.readFileSync("api-key.txt", "utf-8")
 });
+const admin = 1689295608;
 const messageFile = "messages.json";
 let messages = {};
 function loadMessages() {
@@ -63,6 +53,7 @@ function loadMessages() {
         let message = tmp[id];
         messages[id] = [...emptyMsg, ...message];
     }
+    console.log(messages);
 }
 function saveMessages() {
     let tmp = {};
@@ -80,9 +71,10 @@ function readSync(path) {
     }
     return fs.readFileSync(path, "utf-8");
 }
-let prompt = readSync("./prompt.txt");
+let prompt = readSync("./prompt.txt").replaceAll("\n", "");
 // TODO 聊天相关性检测，在没有 AT 的情况下辨别是否在与bot聊天
 let about = readSync("./about.txt");
+let breakPrompt = readSync("./break.txt");
 let emptyMsg = [
     {
         role: "system",
@@ -103,6 +95,7 @@ let empAbout = [
 ];
 let groupMessages = {};
 let groupCaches = {};
+let groupLastCue = {};
 function addCache(id, message) {
     let arr = groupCaches[id] || [];
     arr.push(message);
@@ -141,6 +134,10 @@ function addMessage(id, message) {
     if (!message) {
         return msg;
     }
+    // 将记忆控制在 200 条以减少成本
+    if (msg.length > 200) {
+        msg.splice(0, msg.length - 200);
+    }
     msg.push({
         role: message.role,
         content: message.content
@@ -149,22 +146,110 @@ function addMessage(id, message) {
     saveMessages();
     return msg;
 }
-function clearMessage(id) {
-    messages[id] = emptyMessage();
-    saveMessages();
-}
-function sendMessage(messages) {
-    return __awaiter(this, void 0, void 0, function* () {
-        return openAi.chat.completions.create({
-            model: "deepseek-chat",
-            messages: messages,
-            temperature: 1.2
-        }).then(response => {
-            return response.choices[0].message;
-        }).catch(_ => {
-            return null;
-        });
+async function requestChat(messages, temperature = 1.2) {
+    return openAi.chat.completions.create({
+        model: "deepseek-chat",
+        messages: messages,
+        temperature: temperature
+    }).then(response => {
+        return response.choices[0].message;
+    }).catch(e => {
+        sendError(e);
+        return null;
     });
+}
+const sentences = /([^。?!？！]+[。?!？！\n\t]?)/ig;
+const queue = [];
+let logger;
+function sendError(err) {
+    logger.error(err);
+}
+function toXX(num) {
+    if (num > 9)
+        return String(num);
+    return `0${num}`;
+}
+async function requestBreak() {
+    return requestChat([
+        ...emptyMsg, {
+            role: "system",
+            content: breakPrompt
+        }
+    ], 1.5); // 使 BREAK 回复更多随机性
+}
+async function sendMessage(group, user_id, message, message_id, bot_id, ignore_break = false, at = false) {
+    // 最大处理字数 300
+    if (message.length > 300) {
+        group.sendMessage(new MessageBuilder_1.MessageBuilder()
+            .at(user_id)
+            .append(" 好多字... 咱看不过来了...")
+            .build()).catch(sendError);
+        return;
+    }
+    let time = new Date();
+    let formatted = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()} ${toXX(time.getHours())}:${toXX(time.getMinutes())}:${toXX(time.getSeconds())}`;
+    message = message.replaceAll(`[@${bot_id}]`, "").trim();
+    let content = `[${formatted}] ${message}`;
+    let member = await group.getMember(user_id).catch(sendError);
+    if (!member)
+        return;
+    logger.info(`${member.nickname}: ${content}`);
+    // 备份在 BREAK 前的消息记录
+    let backup = [...getMessage(user_id)];
+    requestChat(addMessage(user_id, {
+        role: "user",
+        content: content
+    })).then(message => {
+        if (!message)
+            return;
+        let content = message.content?.replaceAll("\n", "");
+        if (!content)
+            return;
+        addMessage(user_id, message);
+        if (content.match("PASS")) {
+            setMessages(user_id, backup);
+            return;
+        }
+        if (content.match("BREAK")) {
+            setMessages(user_id, backup);
+            if (ignore_break)
+                return;
+            requestBreak().then(message => {
+                if (!message)
+                    return;
+                // 将获取到的 BREAK 响应添加到回复队列
+                queue.push({
+                    messages: [message.content],
+                    group_id: group.group_id,
+                    user_id: user_id,
+                    message_id: message_id,
+                    at: at
+                });
+            });
+            return;
+        }
+        let messages = content.match(sentences) || [];
+        let marge = [];
+        let buf = "";
+        // 合并短消息，比如 “喵？” 不应该单独发送
+        messages.forEach(msg => {
+            if (buf.length < 8) {
+                buf += msg.trim();
+                return;
+            }
+            marge.push(buf);
+            buf = msg;
+        });
+        marge.push(buf);
+        // 将消息添加进队列
+        queue.push({
+            messages: marge,
+            group_id: group.group_id,
+            user_id: user_id,
+            message_id: message_id,
+            at: at
+        });
+    }).catch(sendError);
 }
 /**
  * 是否提及指定 QQ
@@ -173,37 +258,34 @@ function sendMessage(messages) {
  * @param id QQ
  * @param client 客户端
  */
-function isCue(chain, id, client) {
-    return __awaiter(this, void 0, void 0, function* () {
-        for (let msg of chain.chain) {
-            if (msg.type === "at") {
-                if (msg.data.qq == id) {
+async function isCue(chain, id, client) {
+    for (let msg of chain.chain) {
+        if (msg.type === "at") {
+            if (msg.data.qq == id) {
+                return true;
+            }
+        }
+        else if (msg.type === "reply") {
+            try {
+                let reply = await client.getMsg(msg.data.id).catch(sendError);
+                if (!reply)
+                    continue;
+                if (reply.sender.user_id == id) {
                     return true;
                 }
             }
-            else if (msg.type === "reply") {
-                try {
-                    let reply = yield client.getMsg(msg.data.id).catch(() => { });
-                    if (!reply)
-                        continue;
-                    if (reply.sender.user_id == id) {
-                        return true;
-                    }
-                }
-                catch (e) { }
-            }
+            catch (e) { }
         }
-        return false;
-    });
+    }
+    return false;
 }
-const queue = [];
 module.exports = {
     name: "MeowBot",
     description: "Meow meow...",
     plugin: class MeowPlugin extends AbstractPlugin_1.AbstractPlugin {
         onEnable() {
+            logger = this.logger;
             loadMessages();
-            const sentences = /([^。?!？！]+[。?!？！\n\t]?)/ig;
             let lastMessage = -1;
             let lastSender = {};
             let typing = false;
@@ -211,6 +293,8 @@ module.exports = {
                 if (queue.length < 1 || typing)
                     return;
                 let current = queue[0];
+                if (!current)
+                    return;
                 let group = current.group_id;
                 let last = lastSender[group] || -1;
                 let messages = current.messages;
@@ -224,104 +308,48 @@ module.exports = {
                     mb.reply(current.message_id);
                     lastSender[group] = current.user_id;
                 }
+                if (current.at) {
+                    mb.at(current.user_id);
+                }
                 mb.append(msg);
                 lastMessage = current.message_id;
                 typing = true;
                 setTimeout(() => {
-                    this.client.sendGroupMessage(current.group_id, mb.build()).then(() => {
-                        typing = false;
-                    }).catch(e => {
+                    this.client.sendGroupMessage(current.group_id, mb.build()).catch(e => {
                         this.logger.error("发送消息失败：", e);
+                    }).finally(() => {
+                        typing = false;
                     });
-                }, msg.length * 500);
+                }, msg.length * 200);
             }, 100);
-            this.client.on("notify_poke_notice", e => {
-            });
-            this.client.on("group_message", (event) => __awaiter(this, void 0, void 0, function* () {
-                lastSender[event.group_id] = event.user_id;
+            this.client.on("group_message", async (event) => {
+                console.log(event);
                 let message = event.message;
-                let cue = yield isCue(message, this.client.bot_id, this.client).catch(() => { return false; });
-                if (!cue)
-                    return;
                 let sender = event.sender;
-                let group = yield event.group.catch(() => { });
+                // DEBUGGING
+                if (sender.user_id != admin)
+                    return;
+                lastSender[event.group_id] = sender.user_id;
+                let group = await event.group.catch(sendError);
                 if (!group)
                     return;
-                let msg = event.message.toString(true);
-                // 最大处理字数 300
-                if (msg.length > 300) {
-                    group.sendMessage(new MessageBuilder_1.MessageBuilder()
-                        .at(sender.user_id)
-                        .append(" 好多字... 咱看不过来了...")
-                        .build()).catch(_ => { });
-                    return;
+                // 暂时用于清空聊天记录
+                if (sender.user_id == admin) {
+                    let msg = message.toString().trim();
+                    if (msg.startsWith("DELETE")) {
+                        let uid = msg.substring(7);
+                        group.sendMessage("DELETED").catch(sendError);
+                        setMessages(Number(uid), []);
+                        return;
+                    }
                 }
-                let time = new Date();
-                let formatted = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()} ${time.getHours()}:${time.getMinutes()}`;
-                let content = `[${formatted}] ${msg.replace(`[@${event.self_id}]`, "")}`;
-                this.logger.info(`[${group.group_name}] ${sender.nickname}: ${msg}`);
+                let cue = await isCue(message, this.client.bot_id, this.client).catch(() => { return false; });
+                if (!cue)
+                    return;
+                await sendMessage(group, sender.user_id, message.toString(), event.message_id, event.self_id);
                 // 停止传播事件
                 event.stopPropagation();
-                // 备份在 BREAK 前的消息记录
-                let backup = [...getMessage(sender.user_id)];
-                sendMessage(addMessage(sender.user_id, {
-                    role: "user",
-                    content: content
-                })).then(message => {
-                    if (!message)
-                        return;
-                    let content = message.content;
-                    if (!content)
-                        return;
-                    addMessage(sender.user_id, message);
-                    if (content.match("PASS")) {
-                        setMessages(sender.user_id, backup);
-                        return;
-                    }
-                    if (content.match("BREAK")) {
-                        setMessages(sender.user_id, backup);
-                        let mb = new MessageBuilder_1.MessageBuilder();
-                        mb.at(sender.user_id)
-                            .append(" ")
-                            .append("不想聊这个话题了喵！");
-                        group.sendMessage(mb.build()).catch(e => {
-                            this.logger.warn("发送消息失败：", e);
-                        });
-                        return;
-                    }
-                    let messages = content.match(sentences) || [];
-                    let marge = [];
-                    let buf = "";
-                    // 合并短消息，比如 “喵？” 不应该单独发送
-                    messages.forEach(msg => {
-                        if (buf.length < 8) {
-                            buf += msg.trim();
-                            return;
-                        }
-                        marge.push(buf);
-                        buf = msg;
-                    });
-                    marge.push(buf);
-                    // 将消息添加进队列
-                    queue.push({
-                        messages: marge,
-                        group_id: event.group_id,
-                        user_id: sender.user_id,
-                        message_id: event.message_id
-                    });
-                    // let delay = 0
-                    // for (const msg of marge) {
-                    //     setTimeout(() => {
-                    //         void group.sendMessage(msg).catch(e => {
-                    //             this.logger.warn("发送消息失败：", e)
-                    //         })
-                    //     }, delay)
-                    //     delay += Math.floor(Math.random() * 2000) + 1000
-                    // }
-                }).catch(e => {
-                    this.logger.warn("发送消息失败：", e);
-                });
-            }));
+            });
         }
     }
 };
