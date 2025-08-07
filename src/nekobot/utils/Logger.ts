@@ -1,13 +1,14 @@
 import fs from "node:fs";
 
 let log: fs.PathOrFileDescriptor
+let currentTime: Date
 
-export function init() {
+export function init(first: boolean = true) {
     if (!fs.existsSync("logs")) {
         fs.mkdirSync("logs")
     }
-    let now = new Date()
-    let time = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`
+    currentTime = new Date()
+    let time = `${currentTime.getFullYear()}-${currentTime.getMonth()+1}-${currentTime.getDate()}`
     let file
     let i = 1
     while (fs.existsSync(file = `logs/${time}-${i}.log`)) {
@@ -19,6 +20,14 @@ export function init() {
     } catch (e) {
         console.error("[Logger] [ERROR] ", e)
         process.exit(1)
+    }
+    if (first) {
+        setInterval(() => {
+            let now = new Date()
+            if (currentTime.getDay() !== now.getDate()) {
+                init(false)
+            }
+        }, 1000)
     }
 }
 

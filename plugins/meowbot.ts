@@ -3,7 +3,6 @@ import {OpenAI} from "openai"
 import * as fs from "node:fs";
 import {ChatCompletionMessageParam} from "openai/resources/chat/completions/completions";
 import {MessageBuilder} from "../onebot/message/MessageBuilder";
-import {Sender} from "../onebot/contact/Sender";
 import {MessageChain} from "../onebot/message/MessageChain";
 import {Client} from "../onebot/OneBot";
 import {Group} from "../onebot/contact/Group";
@@ -15,7 +14,12 @@ const openAi = new OpenAI({
 })
 const admin = 1689295608
 const messageFile = "messages.json"
+const maxCount = 100
 let messages: any = {}
+
+function getTypingDelay(msg: string): number {
+    return msg.length * 200
+}
 
 function loadMessages(): void {
     if (!fs.existsSync(messageFile)) {
@@ -49,63 +53,17 @@ function readSync(path: string): string {
 
 let prompt = readSync("./prompt.txt").replaceAll("\n", "")
 
-// TODO 聊天相关性检测，在没有 AT 的情况下辨别是否在与bot聊天
-let about = readSync("./about.txt")
-
 let breakPrompt = readSync("./break.txt")
 
 let emptyMsg: ChatCompletionMessageParam[] = [
     {
         role: "system",
         content: prompt
-    }, {
-        role: "assistant",
-        content: "明白了喵！"
     }
 ]
-
-let empAbout: ChatCompletionMessageParam[] = [
-    {
-        role: "system",
-        content: about
-    }, {
-        role: "assistant",
-        content: "false"
-    }
-]
-
-let groupMessages: any = {}
-let groupCaches: any = {}
-let groupLastCue: any = {}
-
-function addCache(id: number, message: any) {
-    let arr: any[] = groupCaches[id] || []
-    arr.push(message)
-    groupCaches[id] = arr
-}
-
-function addGroupMessage(id: number, message: string, sender: Sender) {
-    let msg: ChatCompletionMessageParam[] = groupMessages[id] || emptyAbout()
-    let data = {
-        nickname: sender.nickname,
-        user_id: sender.user_id,
-        content: message,
-        time: Date.now()
-    }
-    msg.push({
-        role: "user",
-        content: JSON.stringify(data),
-    })
-    groupCaches[id] = msg
-    return msg
-}
 
 function emptyMessage() {
     return [...emptyMsg]
-}
-
-function emptyAbout() {
-    return [...empAbout]
 }
 
 function getMessage(id: number): any[] {
@@ -122,9 +80,9 @@ function addMessage(id: number, message: ChatCompletionMessageParam | undefined)
     if (!message) {
         return msg
     }
-    // 将记忆控制在 200 条以减少成本
-    if (msg.length > 200) {
-        msg.splice(0, msg.length - 200)
+    // 将记忆控制在 100 条以减少成本
+    if (msg.length > maxCount) {
+        msg.splice(emptyMsg.length, msg.length - maxCount)
     }
     msg.push({
         role: message.role,
@@ -148,27 +106,20 @@ async function requestChat(messages: ChatCompletionMessageParam[], temperature: 
     })
 }
 
-const sentences = /([^。?!？！]+[。?!？！\n\t]?)/ig
+const sentences = /([^。?!？！]+[。?!？！\r\n\t]?)/ig
 const queue: any[] = []
 
 let logger: Logger
 
 function sendError(err: any) {
-    logger.error(err)
+    if (err instanceof Error) {
+        logger.error(err.stack || err)
+    }
 }
 
 function toXX(num: number) {
     if (num > 9) return String(num)
     return `0${num}`
-}
-
-async function requestBreak() {
-    return requestChat([
-        ...emptyMsg, {
-            role: "system",
-            content: breakPrompt
-        }
-    ], 1.5)  // 使 BREAK 回复更多随机性
 }
 
 async function sendMessage(
@@ -177,19 +128,11 @@ async function sendMessage(
     message: string,
     message_id: number,
     bot_id: number,
-    ignore_break: boolean = false,
+    ignore_pass: boolean = false,
     at: boolean = false
 ) {
     // 最大处理字数 300
-    if (message.length > 300) {
-        group.sendMessage(
-            new MessageBuilder()
-                .at(user_id)
-                .append(" 好多字... 咱看不过来了...")
-                .build()
-        ).catch(sendError)
-        return
-    }
+    if (message.length > 300) return
     let time = new Date()
     let formatted = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()} ${toXX(time.getHours())}:${toXX(time.getMinutes())}:${toXX(time.getSeconds())}`
     message = message.replaceAll(`[@${bot_id}]`, "").trim()
@@ -213,23 +156,21 @@ async function sendMessage(
         addMessage(user_id, message)
         if (content.match("PASS")) {
             setMessages(user_id, backup)
+            if (ignore_pass) return
+            let replace = content.replaceAll("PASS", "").trim()
+            if (!replace) return
+
+            queue.push({
+                messages: [replace],
+                group_id: group.group_id,
+                user_id: user_id,
+                message_id: message_id,
+                at: at
+            })
             return
         }
         if (content.match("BREAK")) {
             setMessages(user_id, backup)
-            if (ignore_break) return
-
-            requestBreak().then(message => {
-                if (!message) return
-                // 将获取到的 BREAK 响应添加到回复队列
-                queue.push({
-                    messages: [message.content],
-                    group_id: group.group_id,
-                    user_id: user_id,
-                    message_id: message_id,
-                    at: at
-                })
-            })
             return
         }
 
@@ -246,7 +187,7 @@ async function sendMessage(
             buf = msg
         })
         marge.push(buf)
-        // 将消息添加进队列
+
         queue.push({
             messages: marge,
             group_id: group.group_id,
@@ -303,12 +244,13 @@ module.exports = {
 
                 let group = current.group_id
                 let last = lastSender[group] || -1
-                let messages = current.messages
+                let messages: string[] = current.messages
                 if (messages.length < 1) {
                     queue.shift()
                     return
                 }
-                let msg = messages.shift()
+                // 移除首个消息
+                let msg: string = messages.shift()!!
                 let mb = new MessageBuilder()
                 if (lastMessage != current.message_id || last != current.user_id) {
                     mb.reply(current.message_id)
@@ -326,12 +268,14 @@ module.exports = {
                     }).finally(() => {
                         typing = false
                     })
-                }, msg.length * 200)
+                }, getTypingDelay(msg))
             }, 100)
 
             this.client.on("group_message", async (event) => {
                 let message = event.message
                 let sender = event.sender
+
+                if (!sender) return
 
                 lastSender[event.group_id] = sender.user_id
                 let group = await event.group.catch(sendError)
@@ -354,7 +298,7 @@ module.exports = {
                 await sendMessage(
                     group,
                     sender.user_id,
-                    message.toString(),
+                    message.toStringOnly(),
                     event.message_id,
                     event.self_id
                 )

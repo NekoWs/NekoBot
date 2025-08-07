@@ -31,6 +31,8 @@ export class Sender {
      * @param no_cache 不使用缓存
      */
     async asMember(group: Group, no_cache: boolean = false): Promise<Member> {
+        if (!this.user_id) throw "user_id is null"
+
         return group.getMember(this.user_id, no_cache)
     }
 
@@ -40,6 +42,8 @@ export class Sender {
      * @param client 客户端
      */
     async asFriend(client: Client): Promise<Friend> {
+        if (!this.user_id) throw "user_id is null"
+
         return client.friends.then(friends => {
             for (const friend of friends) {
                 if (friend.user_id == this.user_id) {
@@ -49,6 +53,7 @@ export class Sender {
             throw new Error("friend not found")
         })
     }
+
     constructor(payload: any) {
         this.user_id = payload.user_id
         this.nickname = payload.nickname

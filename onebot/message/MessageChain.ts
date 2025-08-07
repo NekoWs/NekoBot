@@ -59,4 +59,17 @@ export class MessageChain {
         }
         return result
     }
+
+    /**
+     * 将消息链转换为纯文本
+     */
+    toStringOnly(): string {
+        let result = ""
+        for (let msg of this.chain) {
+            if (msg.type === "text") {
+                result += msg.data.text
+            }
+        }
+        return result
+    }
 }
