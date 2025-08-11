@@ -31,7 +31,7 @@ function init(first = true) {
     if (first) {
         setInterval(() => {
             let now = new Date();
-            if (currentTime.getDay() !== now.getDate()) {
+            if (currentTime.getDate() !== now.getDate()) {
                 init(false);
             }
         }, 1000);

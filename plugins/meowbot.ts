@@ -22,9 +22,9 @@ const admin = 1689295608
 const messageFile = "messages.json"
 const maxCount = 100
 
-const lastBotReply: any = {}
-const lastReply: any = {}
-const messages: any = {}
+const lastBotReply = new Map<number, number>()
+const lastReply = new Map<number, number>()
+const messages = new Map<number, ChatCompletionMessageParam[]>()
 
 const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     {
@@ -58,14 +58,14 @@ function loadMessages(): void {
     for (const id of Object.keys(tmp)) {
         let message: ChatCompletionMessageParam[] = tmp[id]
 
-        messages[id] = [...emptyMsg, ...message]
+        messages.set(parseInt(id), [...emptyMsg, ...message])
     }
 }
 
 function saveMessages(): void {
     let tmp: any = {}
-    for (const id of Object.keys(messages)) {
-        let msg: ChatCompletionMessageParam[] = [...messages[id]]
+    for (const id of messages.keys()) {
+        let msg: ChatCompletionMessageParam[] = [...messages.get(id)!!]
         msg.splice(0, emptyMsg.length)
         tmp[id] = msg
     }
@@ -93,17 +93,17 @@ function emptyMessage() {
     return [...emptyMsg]
 }
 
-function getMessage(id: number): any[] {
-    return messages[id] || emptyMessage()
+function getMessage(id: number): ChatCompletionMessageParam[] {
+    return messages.get(id) || emptyMessage()
 }
 
-function setMessages(id: number, _messages: any[]) {
-    messages[id] = _messages
+function setMessages(id: number, _messages: ChatCompletionMessageParam[]) {
+    messages.set(id, _messages)
     saveMessages()
 }
 
-function addMessage(id: number, message: ChatCompletionMessageParam | ChatCompletionMessage | undefined) {
-    let msg: any[] = getMessage(id)
+function addMessage(id: number, message: ChatCompletionMessageParam) {
+    let msg = getMessage(id)
     if (!message) {
         return msg
     }
@@ -113,7 +113,7 @@ function addMessage(id: number, message: ChatCompletionMessageParam | ChatComple
     }
     msg.push(message)
 
-    messages[id] = msg
+    messages.set(id, msg)
     saveMessages()
     return msg
 }
@@ -285,7 +285,7 @@ async function isCue(
 ): Promise<boolean> {
     let flag = false
     let now = Date.now()
-    if (now - (lastReply[sender] || 0) < 15 * 1000 || lastBotReply[group] == sender) {
+    if (now - (lastReply.get(sender) || 0) < 15 * 1000 || lastBotReply.get(group) == sender) {
         flag = true
     }
 
@@ -350,8 +350,8 @@ module.exports = {
                     this.client.sendGroupMessage(current.group_id, mb.build()).catch(e => {
                         logger.error("发送消息失败：", e)
                     }).finally(() => {
-                        lastReply[current.user_id] = Date.now()
-                        lastBotReply[current.group_id] = current.user_id
+                        lastReply.set(current.user_id, Date.now())
+                        lastBotReply.set(current.group_id, current.user_id)
                         typing = false
                     })
                 }, getTypingDelay(msg))
@@ -390,7 +390,7 @@ module.exports = {
                     this.client
                 ).catch(function () { return false })
 
-                lastBotReply[event.group_id] = -1
+                lastBotReply.delete(event.group_id)
                 if (!cue) return
 
                 await sendMessage(

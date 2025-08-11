@@ -51,15 +51,15 @@ function broadcast(msg, delay = 0, blacklist = []) {
 const timing = new Timing_1.Timing();
 const tasks = [
     {
-        time: new Timing_1.Time(7, 30, 0),
+        time: new Timing_1.Time(8, 30, 0),
         message: messages.morning
     },
     {
-        time: new Timing_1.Time(12, 0, 0),
+        time: new Timing_1.Time(11, 30, 0),
         message: messages.afternoon
     },
     {
-        time: new Timing_1.Time(22, 0, 0),
+        time: new Timing_1.Time(23, 0, 0),
         message: messages.night
     }
 ];
