@@ -28,8 +28,8 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     {
         type: "function",
         function: {
-            name: "get_nickname",
-            description: "获取用户。",
+            name: "get_time",
+            description: "获取当前时间。",
             parameters: {
                 type: "object",
                 properties: {
