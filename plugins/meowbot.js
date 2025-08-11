@@ -32,12 +32,16 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const AbstractPlugin_1 = require("../src/nekobot/plugin/AbstractPlugin");
 const openai_1 = require("openai");
 const fs = __importStar(require("node:fs"));
 const MessageBuilder_1 = require("../onebot/message/MessageBuilder");
 const DateFormatter_1 = require("../src/nekobot/utils/DateFormatter");
+const pangu_1 = __importDefault(require("pangu"));
 const openAi = new openai_1.OpenAI({
     baseURL: "https://api.deepseek.com",
     apiKey: fs.readFileSync("api-key.txt", "utf-8")
@@ -51,8 +55,8 @@ const tools = [
     {
         type: "function",
         function: {
-            name: "get_nickname",
-            description: "获取用户。",
+            name: "get_time",
+            description: "获取当前时间",
             parameters: {
                 type: "object",
                 properties: {
@@ -126,7 +130,7 @@ function addMessage(id, message) {
     saveMessages();
     return msg;
 }
-async function requestChat(messages, temperature = 1.2) {
+async function requestChat(messages, temperature = 1.5) {
     return openAi.chat.completions.create({
         model: "deepseek-chat",
         messages: messages,
@@ -171,7 +175,6 @@ function toolsCallback(calls) {
     }
     return results;
 }
-const sentences = /([^。?!？！]+[。?!？！\r\n\t]?)/ig;
 const queue = [];
 let logger;
 function sendError(err) {
@@ -195,14 +198,14 @@ async function sendMessage(group, user_id, message, message_id, ignore_pass = fa
     })).then(message => {
         if (!message)
             return;
-        let content = message.content?.replaceAll("\n", "");
+        let content = message.content;
         if (!content)
             return;
         addMessage(user_id, message);
         if (content.match("PASS")) {
             if (ignore_pass)
                 return;
-            let replace = content.replaceAll("PASS", "").trim() || "...";
+            let replace = content.replaceAll("PASS", "").trim() || "……";
             if (!replace)
                 return;
             queue.push({
@@ -218,21 +221,38 @@ async function sendMessage(group, user_id, message, message_id, ignore_pass = fa
             setMessages(user_id, backup);
             return;
         }
-        let messages = content.match(sentences) || [];
-        let marge = [];
-        let buf = "";
-        // 合并短消息，比如 “喵？” 不应该单独发送
-        messages.forEach(msg => {
-            if (buf.length < 8) {
-                buf += msg.trim();
-                return;
+        let messages = content.split("\n") || [];
+        if (messages.length > 2) {
+            messages = [content.replaceAll("\n", "").trim()];
+        }
+        let cleared = [];
+        messages.forEach(message => {
+            let trim = message.trim().replace(/[\n\r\t]/g, "");
+            if (trim.endsWith("。")) {
+                trim = trim.substring(0, trim.length - 1);
             }
-            marge.push(buf);
-            buf = msg;
+            if (trim) {
+                // 使用 pangu.js 添加空格
+                cleared.push(pangu_1.default.spacingText(trim));
+            }
         });
-        marge.push(buf);
+        // let marge: string[] = []
+        // let buf = ""
+        // // 合并短消息，比如 “喵？” 不应该单独发送
+        // messages.forEach(msg => {
+        //     if (buf.length < 8) {
+        //         buf += msg.trim().replace(/[\n\r\t]/g, "")
+        //         return
+        //     }
+        //     if (buf.endsWith("。")) {
+        //         buf = buf.substring(0, buf.length - 1)
+        //     }
+        //     marge.push(buf)
+        //     buf = msg
+        // })
+        // marge.push(buf)
         queue.push({
-            messages: marge,
+            messages: cleared,
             group_id: group.group_id,
             user_id: user_id,
             message_id: message_id,

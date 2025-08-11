@@ -12,6 +12,7 @@ import {Client} from "../onebot/OneBot";
 import {Group} from "../onebot/contact/Group";
 import { Logger } from "../src/nekobot/utils/Logger";
 import {DateFormatter} from "../src/nekobot/utils/DateFormatter";
+import pangu from "pangu";
 
 const openAi = new OpenAI({
     baseURL: "https://api.deepseek.com",
@@ -22,6 +23,7 @@ const messageFile = "messages.json"
 const maxCount = 100
 
 const lastReply: any = {}
+const lastSender: any = {}
 const messages: any = {}
 
 const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
@@ -29,7 +31,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
         type: "function",
         function: {
             name: "get_time",
-            description: "获取当前时间。",
+            description: "获取当前时间",
             parameters: {
                 type: "object",
                 properties: {
@@ -118,7 +120,7 @@ function addMessage(id: number, message: ChatCompletionMessageParam | ChatComple
 
 async function requestChat(
     messages: ChatCompletionMessageParam[],
-    temperature: number = 1.2
+    temperature: number = 1.5
 ): Promise<ChatCompletionMessage | null> {
     return openAi.chat.completions.create({
         model: "deepseek-chat",
@@ -165,7 +167,6 @@ function toolsCallback(calls: ChatCompletionMessageToolCall[]): ChatCompletionMe
     return results
 }
 
-const sentences = /([^。?!？！]+[。?!？！\r\n\t]?)/ig
 const queue: any[] = []
 
 let logger: Logger
@@ -202,13 +203,13 @@ async function sendMessage(
     ).then(message => {
         if (!message) return
 
-        let content = message.content?.replaceAll("\n", "")
+        let content = message.content
         if (!content) return
         addMessage(user_id, message)
 
         if (content.match("PASS")) {
             if (ignore_pass) return
-            let replace = content.replaceAll("PASS", "").trim() || "..."
+            let replace = content.replaceAll("PASS", "").trim() || "……"
             if (!replace) return
 
             queue.push({
@@ -225,22 +226,39 @@ async function sendMessage(
             return
         }
 
-        let messages = content.match(sentences) || []
-        let marge: string[] = []
-        let buf = ""
-        // 合并短消息，比如 “喵？” 不应该单独发送
-        messages.forEach(msg => {
-            if (buf.length < 8) {
-                buf += msg.trim()
-                return
+        let messages = content.split("\n") || []
+        if (messages.length > 2) {
+            messages = [content.replaceAll("\n", "").trim()]
+        }
+        let cleared: string[] = []
+        messages.forEach(message => {
+            let trim = message.trim().replace(/[\n\r\t]/g, "")
+            if (trim.endsWith("。")) {
+                trim = trim.substring(0, trim.length - 1)
             }
-            marge.push(buf)
-            buf = msg
+            if (trim) {
+                // 使用 pangu.js 添加空格
+                cleared.push(pangu.spacingText(trim))
+            }
         })
-        marge.push(buf)
+        // let marge: string[] = []
+        // let buf = ""
+        // // 合并短消息，比如 “喵？” 不应该单独发送
+        // messages.forEach(msg => {
+        //     if (buf.length < 8) {
+        //         buf += msg.trim().replace(/[\n\r\t]/g, "")
+        //         return
+        //     }
+        //     if (buf.endsWith("。")) {
+        //         buf = buf.substring(0, buf.length - 1)
+        //     }
+        //     marge.push(buf)
+        //     buf = msg
+        // })
+        // marge.push(buf)
 
         queue.push({
-            messages: marge,
+            messages: cleared,
             group_id: group.group_id,
             user_id: user_id,
             message_id: message_id,
@@ -255,12 +273,19 @@ async function sendMessage(
  * @param chain 消息链
  * @param id QQ
  * @param sender 发送者QQ
+ * @param group 消息群
  * @param client 客户端
  */
-async function isCue(chain: MessageChain, id: number, sender: number, client: Client): Promise<boolean> {
+async function isCue(
+    chain: MessageChain,
+    id: number,
+    sender: number,
+    group: number,
+    client: Client
+): Promise<boolean> {
     let flag = false
     let now = Date.now()
-    if (now - (lastReply[sender] || 0) < 30 * 1000) {
+    if (now - (lastReply[sender] || 0) < 30 * 1000 || lastSender[group] == id) {
         flag = true
     }
 
@@ -269,6 +294,7 @@ async function isCue(chain: MessageChain, id: number, sender: number, client: Cl
             if (msg.data.qq == id) {
                 return true
             }
+            flag = false
         } else if (msg.type === "reply") {
             try {
                 let reply = await client.getMsg(msg.data.id).catch(sendError)
@@ -291,7 +317,6 @@ module.exports = {
             loadMessages()
 
             let lastMessage = -1
-            let lastSender: any = {}
             let typing = false
 
             setInterval(() => {
@@ -354,6 +379,7 @@ module.exports = {
                     message,
                     this.client.bot_id,
                     sender.user_id,
+                    event.group_id,
                     this.client
                 ).catch(() => { return false })
 
