@@ -209,7 +209,7 @@ async function sendMessage(
 
         if (content.match("PASS")) {
             if (ignore_pass) return
-            let replace = content.replaceAll("PASS", "").trim() || "……"
+            let replace = content.replaceAll("PASS", "").trim() || "喵.."
             if (!replace) return
 
             queue.push({
@@ -285,7 +285,7 @@ async function isCue(
 ): Promise<boolean> {
     let flag = false
     let now = Date.now()
-    if (now - (lastReply[sender] || 0) < 30 * 1000 || lastBotReply[group] == sender) {
+    if (now - (lastReply[sender] || 0) < 15 * 1000 || lastBotReply[group] == sender) {
         flag = true
     }
 
@@ -362,14 +362,12 @@ module.exports = {
                 let sender = event.sender
 
                 if (!sender) {
-                    logger.warn("Sender is null")
                     return
                 }
                 lastSender[event.group_id] = sender.user_id
 
                 let group = await event.group.catch(sendError)
                 if (!group) {
-                    logger.warn("Group is null")
                     return
                 }
 

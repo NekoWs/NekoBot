@@ -206,7 +206,7 @@ async function sendMessage(group, user_id, message, message_id, ignore_pass = fa
         if (content.match("PASS")) {
             if (ignore_pass)
                 return;
-            let replace = content.replaceAll("PASS", "").trim() || "……";
+            let replace = content.replaceAll("PASS", "").trim() || "喵..";
             if (!replace)
                 return;
             queue.push({
@@ -273,7 +273,7 @@ async function sendMessage(group, user_id, message, message_id, ignore_pass = fa
 async function isCue(chain, id, sender, group, client) {
     let flag = false;
     let now = Date.now();
-    if (now - (lastReply[sender] || 0) < 30 * 1000 || lastBotReply[group] == sender) {
+    if (now - (lastReply[sender] || 0) < 15 * 1000 || lastBotReply[group] == sender) {
         flag = true;
     }
     for (let msg of chain.chain) {
@@ -337,6 +337,7 @@ module.exports = {
                     }).finally(() => {
                         lastReply[current.user_id] = Date.now();
                         lastBotReply[current.group_id] = current.user_id;
+                        console.log(lastBotReply);
                         typing = false;
                     });
                 }, getTypingDelay(msg));
@@ -366,6 +367,7 @@ module.exports = {
                 }
                 let cue = await isCue(message, this.client.bot_id, sender.user_id, event.group_id, this.client).catch(function () { return false; });
                 lastBotReply[event.group_id] = -1;
+                console.log(lastBotReply, "on msg");
                 if (!cue)
                     return;
                 await sendMessage(group, sender.user_id, message.toStringOnly(), event.message_id);
