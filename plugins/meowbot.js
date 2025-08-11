@@ -337,7 +337,6 @@ module.exports = {
                     }).finally(() => {
                         lastReply[current.user_id] = Date.now();
                         lastBotReply[current.group_id] = current.user_id;
-                        console.log(lastBotReply);
                         typing = false;
                     });
                 }, getTypingDelay(msg));
@@ -346,13 +345,11 @@ module.exports = {
                 let message = event.message;
                 let sender = event.sender;
                 if (!sender) {
-                    logger.warn("Sender is null");
                     return;
                 }
                 lastSender[event.group_id] = sender.user_id;
                 let group = await event.group.catch(sendError);
                 if (!group) {
-                    logger.warn("Group is null");
                     return;
                 }
                 // 暂时用于清空聊天记录
@@ -367,7 +364,6 @@ module.exports = {
                 }
                 let cue = await isCue(message, this.client.bot_id, sender.user_id, event.group_id, this.client).catch(function () { return false; });
                 lastBotReply[event.group_id] = -1;
-                console.log(lastBotReply, "on msg");
                 if (!cue)
                     return;
                 await sendMessage(group, sender.user_id, message.toStringOnly(), event.message_id);
