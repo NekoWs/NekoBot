@@ -22,8 +22,8 @@ const admin = 1689295608
 const messageFile = "messages.json"
 const maxCount = 100
 
+const lastBotReply: any = {}
 const lastReply: any = {}
-const lastSender: any = {}
 const messages: any = {}
 
 const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
@@ -285,7 +285,7 @@ async function isCue(
 ): Promise<boolean> {
     let flag = false
     let now = Date.now()
-    if (now - (lastReply[sender] || 0) < 30 * 1000 || lastSender[group] == id) {
+    if (now - (lastReply[sender] || 0) < 30 * 1000 || lastBotReply[group] == sender) {
         flag = true
     }
 
@@ -316,11 +316,13 @@ module.exports = {
 
             loadMessages()
 
+            const lastSender: any = {}
             let lastMessage = -1
             let typing = false
 
             setInterval(() => {
                 if (queue.length < 1 || typing) return
+
                 let current = queue[0]
                 if (!current) return
 
@@ -349,6 +351,7 @@ module.exports = {
                         logger.error("发送消息失败：", e)
                     }).finally(() => {
                         lastReply[current.user_id] = Date.now()
+                        lastBotReply[current.group_id] = current.user_id
                         typing = false
                     })
                 }, getTypingDelay(msg))
@@ -358,11 +361,17 @@ module.exports = {
                 let message = event.message
                 let sender = event.sender
 
-                if (!sender) return
-
+                if (!sender) {
+                    logger.warn("Sender is null")
+                    return
+                }
                 lastSender[event.group_id] = sender.user_id
+
                 let group = await event.group.catch(sendError)
-                if (!group) return
+                if (!group) {
+                    logger.warn("Group is null")
+                    return
+                }
 
                 // 暂时用于清空聊天记录
                 if (sender.user_id == admin) {
@@ -381,8 +390,9 @@ module.exports = {
                     sender.user_id,
                     event.group_id,
                     this.client
-                ).catch(() => { return false })
+                ).catch(function () { return false })
 
+                lastBotReply[event.group_id] = -1
                 if (!cue) return
 
                 await sendMessage(

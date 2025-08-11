@@ -49,6 +49,7 @@ const openAi = new openai_1.OpenAI({
 const admin = 1689295608;
 const messageFile = "messages.json";
 const maxCount = 100;
+const lastBotReply = {};
 const lastReply = {};
 const messages = {};
 const tools = [
@@ -266,12 +267,13 @@ async function sendMessage(group, user_id, message, message_id, ignore_pass = fa
  * @param chain 消息链
  * @param id QQ
  * @param sender 发送者QQ
+ * @param group 消息群
  * @param client 客户端
  */
-async function isCue(chain, id, sender, client) {
+async function isCue(chain, id, sender, group, client) {
     let flag = false;
     let now = Date.now();
-    if (now - (lastReply[sender] || 0) < 30 * 1000) {
+    if (now - (lastReply[sender] || 0) < 30 * 1000 || lastBotReply[group] == sender) {
         flag = true;
     }
     for (let msg of chain.chain) {
@@ -279,6 +281,7 @@ async function isCue(chain, id, sender, client) {
             if (msg.data.qq == id) {
                 return true;
             }
+            flag = false;
         }
         else if (msg.type === "reply") {
             try {
@@ -299,8 +302,8 @@ module.exports = {
         onEnable() {
             logger = this.logger;
             loadMessages();
+            const lastSender = {};
             let lastMessage = -1;
-            let lastSender = {};
             let typing = false;
             setInterval(() => {
                 if (queue.length < 1 || typing)
@@ -333,6 +336,7 @@ module.exports = {
                         logger.error("发送消息失败：", e);
                     }).finally(() => {
                         lastReply[current.user_id] = Date.now();
+                        lastBotReply[current.group_id] = current.user_id;
                         typing = false;
                     });
                 }, getTypingDelay(msg));
@@ -340,12 +344,16 @@ module.exports = {
             this.client.on("group_message", async (event) => {
                 let message = event.message;
                 let sender = event.sender;
-                if (!sender)
+                if (!sender) {
+                    logger.warn("Sender is null");
                     return;
+                }
                 lastSender[event.group_id] = sender.user_id;
                 let group = await event.group.catch(sendError);
-                if (!group)
+                if (!group) {
+                    logger.warn("Group is null");
                     return;
+                }
                 // 暂时用于清空聊天记录
                 if (sender.user_id == admin) {
                     let msg = message.toString().trim();
@@ -356,7 +364,8 @@ module.exports = {
                         return;
                     }
                 }
-                let cue = await isCue(message, this.client.bot_id, sender.user_id, this.client).catch(() => { return false; });
+                let cue = await isCue(message, this.client.bot_id, sender.user_id, event.group_id, this.client).catch(function () { return false; });
+                lastBotReply[event.group_id] = -1;
                 if (!cue)
                     return;
                 await sendMessage(group, sender.user_id, message.toStringOnly(), event.message_id);

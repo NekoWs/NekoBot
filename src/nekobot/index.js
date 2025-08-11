@@ -86,7 +86,7 @@ client.on("open", async () => {
     }
     console.log("NekoBot Running!");
 });
-const messages = JSON.parse(fs.readFileSync("alerts.json", "utf8"));
+const messages = JSON.parse(fs.readFileSync("MeowQAQ.alerts.json", "utf8"));
 function random(array) {
     if (!array)
         throw new Error("array is null");
