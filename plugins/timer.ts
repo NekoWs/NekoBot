@@ -52,15 +52,15 @@ function broadcast(
 const timing = new Timing()
 const tasks = [
     {
-        time: new Time(7, 30, 0),
+        time: new Time(8, 30, 0),
         message: messages.morning
     },
     {
-        time: new Time(12, 0, 0),
+        time: new Time(11, 30, 0),
         message: messages.afternoon
     },
     {
-        time: new Time(22, 0, 0),
+        time: new Time(23, 0, 0),
         message: messages.night
     }
 ]
