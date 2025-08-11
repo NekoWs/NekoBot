@@ -1,6 +1,6 @@
 import {GroupNoticeEvent} from "./GroupNoticeEvent";
 
-export class GroupMsgEmojiLike extends GroupNoticeEvent {
+export class GroupMsgEmojiLikeEvent extends GroupNoticeEvent {
     /**
      * 操作的用户 QQ 号
      */

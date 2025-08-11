@@ -37,13 +37,38 @@ const AbstractPlugin_1 = require("../src/nekobot/plugin/AbstractPlugin");
 const openai_1 = require("openai");
 const fs = __importStar(require("node:fs"));
 const MessageBuilder_1 = require("../onebot/message/MessageBuilder");
+const DateFormatter_1 = require("../src/nekobot/utils/DateFormatter");
 const openAi = new openai_1.OpenAI({
     baseURL: "https://api.deepseek.com",
     apiKey: fs.readFileSync("api-key.txt", "utf-8")
 });
 const admin = 1689295608;
 const messageFile = "messages.json";
-let messages = {};
+const maxCount = 100;
+const lastReply = {};
+const messages = {};
+const tools = [
+    {
+        type: "function",
+        function: {
+            name: "get_nickname",
+            description: "获取用户。",
+            parameters: {
+                type: "object",
+                properties: {
+                    pattern: {
+                        type: "string",
+                        description: "获取时间的格式，例如 \"yyyy-MM-dd HH:mm:ss\"",
+                    }
+                },
+                required: ["pattern"]
+            }
+        }
+    }
+];
+function getTypingDelay(msg) {
+    return msg.length * 200;
+}
 function loadMessages() {
     if (!fs.existsSync(messageFile)) {
         fs.writeFileSync(messageFile, JSON.stringify({}));
@@ -53,13 +78,12 @@ function loadMessages() {
         let message = tmp[id];
         messages[id] = [...emptyMsg, ...message];
     }
-    console.log(messages);
 }
 function saveMessages() {
     let tmp = {};
     for (const id of Object.keys(messages)) {
         let msg = [...messages[id]];
-        msg.splice(0, 2);
+        msg.splice(0, emptyMsg.length);
         tmp[id] = msg;
     }
     fs.writeFileSync(messageFile, JSON.stringify(tmp));
@@ -71,56 +95,15 @@ function readSync(path) {
     }
     return fs.readFileSync(path, "utf-8");
 }
-let prompt = readSync("./prompt.txt").replaceAll("\n", "");
-// TODO 聊天相关性检测，在没有 AT 的情况下辨别是否在与bot聊天
-let about = readSync("./about.txt");
-let breakPrompt = readSync("./break.txt");
+const prompt = readSync("./prompt.txt").replaceAll(/[\n\r]/g, "");
 let emptyMsg = [
     {
         role: "system",
         content: prompt
-    }, {
-        role: "assistant",
-        content: "明白了喵！"
     }
 ];
-let empAbout = [
-    {
-        role: "system",
-        content: about
-    }, {
-        role: "assistant",
-        content: "false"
-    }
-];
-let groupMessages = {};
-let groupCaches = {};
-let groupLastCue = {};
-function addCache(id, message) {
-    let arr = groupCaches[id] || [];
-    arr.push(message);
-    groupCaches[id] = arr;
-}
-function addGroupMessage(id, message, sender) {
-    let msg = groupMessages[id] || emptyAbout();
-    let data = {
-        nickname: sender.nickname,
-        user_id: sender.user_id,
-        content: message,
-        time: Date.now()
-    };
-    msg.push({
-        role: "user",
-        content: JSON.stringify(data),
-    });
-    groupCaches[id] = msg;
-    return msg;
-}
 function emptyMessage() {
     return [...emptyMsg];
-}
-function emptyAbout() {
-    return [...empAbout];
 }
 function getMessage(id) {
     return messages[id] || emptyMessage();
@@ -134,14 +117,11 @@ function addMessage(id, message) {
     if (!message) {
         return msg;
     }
-    // 将记忆控制在 200 条以减少成本
-    if (msg.length > 200) {
-        msg.splice(0, msg.length - 200);
+    // 将记忆控制在 100 条以减少成本
+    if (msg.length > maxCount) {
+        msg.splice(emptyMsg.length, msg.length - maxCount);
     }
-    msg.push({
-        role: message.role,
-        content: message.content
-    });
+    msg.push(message);
     messages[id] = msg;
     saveMessages();
     return msg;
@@ -150,55 +130,68 @@ async function requestChat(messages, temperature = 1.2) {
     return openAi.chat.completions.create({
         model: "deepseek-chat",
         messages: messages,
-        temperature: temperature
-    }).then(response => {
-        return response.choices[0].message;
+        temperature: temperature,
+        tools: tools
+    }).then(async (response) => {
+        let msg = response.choices[0].message;
+        let calls = msg.tool_calls;
+        if (calls && calls.length > 0) {
+            let toolMessages = toolsCallback(calls);
+            let tmp = [...messages];
+            tmp.push(msg);
+            for (const msg of toolMessages) {
+                tmp.push(msg);
+            }
+            return requestChat(tmp, temperature);
+        }
+        return msg;
     }).catch(e => {
         sendError(e);
         return null;
     });
 }
-const sentences = /([^。?!？！]+[。?!？！\n\t]?)/ig;
+function toolsCallback(calls) {
+    let results = [];
+    for (const call of calls) {
+        let func = call.function;
+        let args = {};
+        try {
+            args = JSON.parse(func.arguments);
+        }
+        catch (e) { }
+        switch (func.name) {
+            case "get_time":
+                results.push({
+                    role: "tool",
+                    tool_call_id: call.id,
+                    content: DateFormatter_1.DateFormatter.format(new Date(), args["pattern"])
+                });
+                break;
+        }
+    }
+    return results;
+}
+const sentences = /([^。?!？！]+[。?!？！\r\n\t]?)/ig;
 const queue = [];
 let logger;
 function sendError(err) {
-    logger.error(err);
-}
-function toXX(num) {
-    if (num > 9)
-        return String(num);
-    return `0${num}`;
-}
-async function requestBreak() {
-    return requestChat([
-        ...emptyMsg, {
-            role: "system",
-            content: breakPrompt
-        }
-    ], 1.5); // 使 BREAK 回复更多随机性
-}
-async function sendMessage(group, user_id, message, message_id, bot_id, ignore_break = false, at = false) {
-    // 最大处理字数 300
-    if (message.length > 300) {
-        group.sendMessage(new MessageBuilder_1.MessageBuilder()
-            .at(user_id)
-            .append(" 好多字... 咱看不过来了...")
-            .build()).catch(sendError);
-        return;
+    if (err instanceof Error) {
+        logger.error(err.stack || err);
     }
-    let time = new Date();
-    let formatted = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()} ${toXX(time.getHours())}:${toXX(time.getMinutes())}:${toXX(time.getSeconds())}`;
-    message = message.replaceAll(`[@${bot_id}]`, "").trim();
-    let content = `[${formatted}] ${message}`;
+}
+async function sendMessage(group, user_id, message, message_id, ignore_pass = false, at = false) {
+    // 最大处理字数 100
+    if (message.length > 100 || message.length < 1)
+        return;
     let member = await group.getMember(user_id).catch(sendError);
     if (!member)
         return;
-    logger.info(`${member.nickname}: ${content}`);
+    logger.info(`${member.nickname}: ${message}`);
     // 备份在 BREAK 前的消息记录
     let backup = [...getMessage(user_id)];
     requestChat(addMessage(user_id, {
         role: "user",
-        content: content
+        content: message
     })).then(message => {
         if (!message)
             return;
@@ -207,25 +200,22 @@ async function sendMessage(group, user_id, message, message_id, bot_id, ignore_b
             return;
         addMessage(user_id, message);
         if (content.match("PASS")) {
-            setMessages(user_id, backup);
+            if (ignore_pass)
+                return;
+            let replace = content.replaceAll("PASS", "").trim() || "...";
+            if (!replace)
+                return;
+            queue.push({
+                messages: [replace],
+                group_id: group.group_id,
+                user_id: user_id,
+                message_id: message_id,
+                at: at
+            });
             return;
         }
         if (content.match("BREAK")) {
             setMessages(user_id, backup);
-            if (ignore_break)
-                return;
-            requestBreak().then(message => {
-                if (!message)
-                    return;
-                // 将获取到的 BREAK 响应添加到回复队列
-                queue.push({
-                    messages: [message.content],
-                    group_id: group.group_id,
-                    user_id: user_id,
-                    message_id: message_id,
-                    at: at
-                });
-            });
             return;
         }
         let messages = content.match(sentences) || [];
@@ -241,7 +231,6 @@ async function sendMessage(group, user_id, message, message_id, bot_id, ignore_b
             buf = msg;
         });
         marge.push(buf);
-        // 将消息添加进队列
         queue.push({
             messages: marge,
             group_id: group.group_id,
@@ -256,9 +245,15 @@ async function sendMessage(group, user_id, message, message_id, bot_id, ignore_b
  *
  * @param chain 消息链
  * @param id QQ
+ * @param sender 发送者QQ
  * @param client 客户端
  */
-async function isCue(chain, id, client) {
+async function isCue(chain, id, sender, client) {
+    let flag = false;
+    let now = Date.now();
+    if (now - (lastReply[sender] || 0) < 30 * 1000) {
+        flag = true;
+    }
     for (let msg of chain.chain) {
         if (msg.type === "at") {
             if (msg.data.qq == id) {
@@ -270,17 +265,15 @@ async function isCue(chain, id, client) {
                 let reply = await client.getMsg(msg.data.id).catch(sendError);
                 if (!reply)
                     continue;
-                if (reply.sender.user_id == id) {
-                    return true;
-                }
+                return reply.sender.user_id == id;
             }
             catch (e) { }
         }
     }
-    return false;
+    return flag;
 }
 module.exports = {
-    name: "MeowBot",
+    name: "Thyme",
     description: "Meow meow...",
     plugin: class MeowPlugin extends AbstractPlugin_1.AbstractPlugin {
         onEnable() {
@@ -302,6 +295,7 @@ module.exports = {
                     queue.shift();
                     return;
                 }
+                // 移除首个消息
                 let msg = messages.shift();
                 let mb = new MessageBuilder_1.MessageBuilder();
                 if (lastMessage != current.message_id || last != current.user_id) {
@@ -316,18 +310,17 @@ module.exports = {
                 typing = true;
                 setTimeout(() => {
                     this.client.sendGroupMessage(current.group_id, mb.build()).catch(e => {
-                        this.logger.error("发送消息失败：", e);
+                        logger.error("发送消息失败：", e);
                     }).finally(() => {
+                        lastReply[current.user_id] = Date.now();
                         typing = false;
                     });
-                }, msg.length * 200);
+                }, getTypingDelay(msg));
             }, 100);
             this.client.on("group_message", async (event) => {
-                console.log(event);
                 let message = event.message;
                 let sender = event.sender;
-                // DEBUGGING
-                if (sender.user_id != admin)
+                if (!sender)
                     return;
                 lastSender[event.group_id] = sender.user_id;
                 let group = await event.group.catch(sendError);
@@ -343,10 +336,10 @@ module.exports = {
                         return;
                     }
                 }
-                let cue = await isCue(message, this.client.bot_id, this.client).catch(() => { return false; });
+                let cue = await isCue(message, this.client.bot_id, sender.user_id, this.client).catch(() => { return false; });
                 if (!cue)
                     return;
-                await sendMessage(group, sender.user_id, message.toString(), event.message_id, event.self_id);
+                await sendMessage(group, sender.user_id, message.toStringOnly(), event.message_id);
                 // 停止传播事件
                 event.stopPropagation();
             });

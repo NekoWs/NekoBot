@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import {DateFormatter} from "./DateFormatter";
 
 let log: fs.PathOrFileDescriptor
 let currentTime: Date
@@ -42,7 +43,8 @@ export class Logger {
     }
 
     private print(message: any, level: levels, ...args: any[]) {
-        let msg = `[${this.prefix}] [${level}] ${message}`
+        let now = new Date()
+        let msg = `[${DateFormatter.format(now, DateFormatter.Formats.TIME)}] [${this.prefix}] [${level}] ${message}`
         fs.appendFileSync(log, msg + ` ${args.map(it => { return it.toString()}).join(" ")}\n`)
         switch (level) {
             case levels.INFO:

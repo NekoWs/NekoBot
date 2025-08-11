@@ -24,7 +24,7 @@ const EssenceEvent_1 = require("./events/notice/EssenceEvent");
 const GroupTitleEvent_1 = require("./events/notice/GroupTitleEvent");
 const ProfileLikeEvent_1 = require("./events/notice/ProfileLikeEvent");
 const GroupUploadEvent_1 = require("./events/notice/GroupUploadEvent");
-const GroupMsgEmojiLike_1 = require("./events/notice/GroupMsgEmojiLike");
+const GroupMsgEmojiLikeEvent_1 = require("./events/notice/GroupMsgEmojiLikeEvent");
 const FriendAddEvent_1 = require("./events/notice/FriendAddEvent");
 const InputStatusEvent_1 = require("./events/notice/InputStatusEvent");
 class Pair {
@@ -137,7 +137,7 @@ class Client {
                                     this.emit("group_upload_notice", new GroupUploadEvent_1.GroupUploadEvent(data));
                                     break;
                                 case "group_msg_emoji_like":
-                                    this.emit("group_msg_emoji_like", new GroupMsgEmojiLike_1.GroupMsgEmojiLike(data));
+                                    this.emit("group_msg_emoji_like", new GroupMsgEmojiLikeEvent_1.GroupMsgEmojiLikeEvent(data));
                                     break;
                                 case "friend_add":
                                     this.emit("friend_add_notice", new FriendAddEvent_1.FriendAddEvent(data));

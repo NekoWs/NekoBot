@@ -56,5 +56,19 @@ class MessageChain {
         }
         return result;
     }
+    /**
+     * 将消息链转换为纯文本，去除所有非文本内容
+     *
+     * @param trim 是否去除前后空格
+     */
+    toStringOnly(trim = true) {
+        let result = "";
+        for (let msg of this.chain) {
+            if (msg.type === "text") {
+                result += msg.data.text;
+            }
+        }
+        return trim ? result.trim() : result;
+    }
 }
 exports.MessageChain = MessageChain;

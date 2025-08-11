@@ -12,6 +12,8 @@ class Sender {
      * @param no_cache 不使用缓存
      */
     async asMember(group, no_cache = false) {
+        if (!this.user_id)
+            throw "user_id is null";
         return group.getMember(this.user_id, no_cache);
     }
     /**
@@ -20,6 +22,8 @@ class Sender {
      * @param client 客户端
      */
     async asFriend(client) {
+        if (!this.user_id)
+            throw "user_id is null";
         return client.friends.then(friends => {
             for (const friend of friends) {
                 if (friend.user_id == this.user_id) {
